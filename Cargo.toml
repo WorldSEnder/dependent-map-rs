@@ -9,3 +9,7 @@ repository = "https://github.com/chris-morgan/anymap"
 readme = "README.md"
 keywords = ["container", "data-structure", "map"]
 license = "MIT/Apache-2.0"
+edition = "2018"
+
+[dependencies]
+dyn-clone = { version = "^1.0" }
