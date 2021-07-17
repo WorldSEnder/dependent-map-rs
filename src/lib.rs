@@ -6,7 +6,7 @@ use std::any::TypeId;
 use std::marker::PhantomData;
 
 use raw::RawMap;
-use any::{UncheckedAnyExt, IntoBox, Any};
+use any::{IntoBox, Any, lateral_ref_unchecked, lateral_mut_unchecked, lateral_boxcast_unchecked};
 
 macro_rules! impl_common_methods {
     (
@@ -14,7 +14,7 @@ macro_rules! impl_common_methods {
         new() => $new:expr;
         with_capacity($with_capacity_arg:ident) => $with_capacity:expr;
     ) => {
-        impl<A: ?Sized + UncheckedAnyExt> $t<A> {
+        impl<A: ?Sized + Any> $t<A> {
             /// Create an empty collection.
             #[inline]
             pub fn new() -> $t<A> {
@@ -76,7 +76,7 @@ macro_rules! impl_common_methods {
             }
         }
 
-        impl<A: ?Sized + UncheckedAnyExt> Default for $t<A> {
+        impl<A: ?Sized + Any> Default for $t<A> {
             #[inline]
             fn default() -> $t<A> {
                 $t::new()
@@ -120,12 +120,12 @@ pub mod raw;
 ///
 /// Values containing non-static references are not permitted.
 #[derive(Debug)]
-pub struct Map<A: ?Sized + UncheckedAnyExt = dyn Any> {
+pub struct Map<A: ?Sized + Any = dyn Any> {
     raw: RawMap<A>,
 }
 
 // #[derive(Clone)] would want A to implement Clone, but in reality it’s only Box<A> that can.
-impl<A: ?Sized + UncheckedAnyExt> Clone for Map<A> where Box<A>: Clone {
+impl<A: ?Sized + Any> Clone for Map<A> where Box<A>: Clone {
     #[inline]
     fn clone(&self) -> Map<A> {
         Map {
@@ -147,12 +147,12 @@ impl_common_methods! {
     with_capacity(capacity) => RawMap::with_capacity(capacity);
 }
 
-impl<A: ?Sized + UncheckedAnyExt> Map<A> {
+impl<A: ?Sized + Any> Map<A> {
     /// Returns a reference to the value stored in the collection for the type `T`, if it exists.
     #[inline]
     pub fn get<T: IntoBox<A>>(&self) -> Option<&T> {
         self.raw.get(&TypeId::of::<T>())
-            .map(|any| unsafe { any.downcast_ref_unchecked::<T>() })
+            .map(|any| unsafe { lateral_ref_unchecked::<_, T>(any) })
     }
 
     /// Returns a mutable reference to the value stored in the collection for the type `T`,
@@ -160,7 +160,7 @@ impl<A: ?Sized + UncheckedAnyExt> Map<A> {
     #[inline]
     pub fn get_mut<T: IntoBox<A>>(&mut self) -> Option<&mut T> {
         self.raw.get_mut(&TypeId::of::<T>())
-            .map(|any| unsafe { any.downcast_mut_unchecked::<T>() })
+            .map(|any| unsafe { lateral_mut_unchecked::<_, T>(any) })
     }
 
     /// Sets the value stored in the collection for the type `T`.
@@ -168,10 +168,10 @@ impl<A: ?Sized + UncheckedAnyExt> Map<A> {
     /// Otherwise, `None` is returned.
     #[inline]
     pub fn insert<T: IntoBox<A>>(&mut self, value: T) -> Option<T> {
-        unsafe {
-            self.raw.insert(TypeId::of::<T>(), value.into_box())
-                .map(|any| *any.downcast_unchecked::<T>())
-        }
+        let key = TypeId::of::<T>();
+        let boxed_value = value.into_box();
+        unsafe { self.raw.insert(key, boxed_value) }
+            .map(|any| *unsafe { lateral_boxcast_unchecked::<_, T>(any) })
     }
 
     /// Removes the `T` value from the collection,
@@ -179,7 +179,7 @@ impl<A: ?Sized + UncheckedAnyExt> Map<A> {
     #[inline]
     pub fn remove<T: IntoBox<A>>(&mut self) -> Option<T> {
         self.raw.remove(&TypeId::of::<T>())
-            .map(|any| *unsafe { any.downcast_unchecked::<T>() })
+            .map(|any| *unsafe { lateral_boxcast_unchecked::<_, T>(any) })
     }
 
     /// Returns true if the collection contains a value of type `T`.
@@ -204,21 +204,21 @@ impl<A: ?Sized + UncheckedAnyExt> Map<A> {
     }
 }
 
-impl<A: ?Sized + UncheckedAnyExt> AsRef<RawMap<A>> for Map<A> {
+impl<A: ?Sized + Any> AsRef<RawMap<A>> for Map<A> {
     #[inline]
     fn as_ref(&self) -> &RawMap<A> {
         &self.raw
     }
 }
 
-impl<A: ?Sized + UncheckedAnyExt> AsMut<RawMap<A>> for Map<A> {
+impl<A: ?Sized + Any> AsMut<RawMap<A>> for Map<A> {
     #[inline]
     fn as_mut(&mut self) -> &mut RawMap<A> {
         &mut self.raw
     }
 }
 
-impl<A: ?Sized + UncheckedAnyExt> Into<RawMap<A>> for Map<A> {
+impl<A: ?Sized + Any> Into<RawMap<A>> for Map<A> {
     #[inline]
     fn into(self) -> RawMap<A> {
         self.raw
@@ -226,26 +226,26 @@ impl<A: ?Sized + UncheckedAnyExt> Into<RawMap<A>> for Map<A> {
 }
 
 /// A view into a single occupied location in an `Map`.
-pub struct OccupiedEntry<'a, A: ?Sized + UncheckedAnyExt, V: 'a> {
+pub struct OccupiedEntry<'a, A: ?Sized + Any, V: 'a> {
     inner: raw::OccupiedEntry<'a, A>,
     type_: PhantomData<V>,
 }
 
 /// A view into a single empty location in an `Map`.
-pub struct VacantEntry<'a, A: ?Sized + UncheckedAnyExt, V: 'a> {
+pub struct VacantEntry<'a, A: ?Sized + Any, V: 'a> {
     inner: raw::VacantEntry<'a, A>,
     type_: PhantomData<V>,
 }
 
 /// A view into a single location in an `Map`, which may be vacant or occupied.
-pub enum Entry<'a, A: ?Sized + UncheckedAnyExt, V: 'a> {
+pub enum Entry<'a, A: ?Sized + Any, V: 'a> {
     /// An occupied Entry
     Occupied(OccupiedEntry<'a, A, V>),
     /// A vacant Entry
     Vacant(VacantEntry<'a, A, V>),
 }
 
-impl<'a, A: ?Sized + UncheckedAnyExt, V: IntoBox<A>> Entry<'a, A, V> {
+impl<'a, A: ?Sized + Any, V: IntoBox<A>> Entry<'a, A, V> {
     /// Ensures a value is in the entry by inserting the default if empty, and returns
     /// a mutable reference to the value in the entry.
     #[inline]
@@ -267,45 +267,47 @@ impl<'a, A: ?Sized + UncheckedAnyExt, V: IntoBox<A>> Entry<'a, A, V> {
     }
 }
 
-impl<'a, A: ?Sized + UncheckedAnyExt, V: IntoBox<A>> OccupiedEntry<'a, A, V> {
+impl<'a, A: ?Sized + Any, V: IntoBox<A>> OccupiedEntry<'a, A, V> {
     /// Gets a reference to the value in the entry
     #[inline]
     pub fn get(&self) -> &V {
-        unsafe { self.inner.get().downcast_ref_unchecked() }
+        unsafe { lateral_ref_unchecked::<_, V>(self.inner.get()) }
     }
 
     /// Gets a mutable reference to the value in the entry
     #[inline]
     pub fn get_mut(&mut self) -> &mut V {
-        unsafe { self.inner.get_mut().downcast_mut_unchecked() }
+        unsafe { lateral_mut_unchecked::<_, V>(self.inner.get_mut()) }
     }
 
     /// Converts the OccupiedEntry into a mutable reference to the value in the entry
     /// with a lifetime bound to the collection itself
     #[inline]
     pub fn into_mut(self) -> &'a mut V {
-        unsafe { self.inner.into_mut().downcast_mut_unchecked() }
+        unsafe { lateral_mut_unchecked::<_, V>(self.inner.into_mut()) }
     }
 
     /// Sets the value of the entry, and returns the entry's old value
     #[inline]
     pub fn insert(&mut self, value: V) -> V {
-        unsafe { *self.inner.insert(value.into_box()).downcast_unchecked() }
+        let value_boxed = value.into_box();
+        *unsafe { lateral_boxcast_unchecked::<_, V>(self.inner.insert(value_boxed)) }
     }
 
     /// Takes the value out of the entry, and returns it
     #[inline]
     pub fn remove(self) -> V {
-        unsafe { *self.inner.remove().downcast_unchecked() }
+        let old = self.inner.remove();
+        *unsafe { lateral_boxcast_unchecked(old) }
     }
 }
 
-impl<'a, A: ?Sized + UncheckedAnyExt, V: IntoBox<A>> VacantEntry<'a, A, V> {
+impl<'a, A: ?Sized + Any, V: IntoBox<A>> VacantEntry<'a, A, V> {
     /// Sets the value of the entry with the VacantEntry's key,
     /// and returns a mutable reference to it
     #[inline]
     pub fn insert(self, value: V) -> &'a mut V {
-        unsafe { self.inner.insert(value.into_box()).downcast_mut_unchecked() }
+        unsafe { lateral_mut_unchecked::<_, V>(self.inner.insert(value.into_box())) }
     }
 }
 

@@ -11,7 +11,7 @@ use std::hash::{Hasher, BuildHasherDefault};
 use std::mem;
 use std::ops::{Index, IndexMut};
 
-use crate::any::{Any, UncheckedAnyExt};
+use crate::any::{Any};
 
 #[derive(Default)]
 struct TypeIdHasher {
@@ -56,12 +56,12 @@ fn type_id_hasher() {
 /// contents of an `Map`. However, because you will then be dealing with `Any` trait objects, it
 /// doesn’t tend to be so very useful. Still, if you need it, it’s here.
 #[derive(Debug)]
-pub struct RawMap<A: ?Sized + UncheckedAnyExt = dyn Any> {
+pub struct RawMap<A: ?Sized + Any = dyn Any> {
     inner: HashMap<TypeId, Box<A>, BuildHasherDefault<TypeIdHasher>>,
 }
 
 // #[derive(Clone)] would want A to implement Clone, but in reality it’s only Box<A> that can.
-impl<A: ?Sized + UncheckedAnyExt> Clone for RawMap<A> where Box<A>: Clone {
+impl<A: ?Sized + Any> Clone for RawMap<A> where Box<A>: Clone {
     #[inline]
     fn clone(&self) -> RawMap<A> {
         RawMap {
@@ -78,58 +78,58 @@ impl_common_methods! {
 
 /// `RawMap` iterator.
 #[derive(Clone)]
-pub struct Iter<'a, A: ?Sized + UncheckedAnyExt> {
+pub struct Iter<'a, A: ?Sized + Any> {
     inner: hash_map::Iter<'a, TypeId, Box<A>>,
 }
-impl<'a, A: ?Sized + UncheckedAnyExt> Iterator for Iter<'a, A> {
+impl<'a, A: ?Sized + Any> Iterator for Iter<'a, A> {
     type Item = &'a A;
     #[inline] fn next(&mut self) -> Option<&'a A> { self.inner.next().map(|x| &**x.1) }
     #[inline] fn size_hint(&self) -> (usize, Option<usize>) { self.inner.size_hint() }
 }
-impl<'a, A: ?Sized + UncheckedAnyExt> ExactSizeIterator for Iter<'a, A> {
+impl<'a, A: ?Sized + Any> ExactSizeIterator for Iter<'a, A> {
     #[inline] fn len(&self) -> usize { self.inner.len() }
 }
 
 /// `RawMap` mutable iterator.
-pub struct IterMut<'a, A: ?Sized + UncheckedAnyExt> {
+pub struct IterMut<'a, A: ?Sized + Any> {
     inner: hash_map::IterMut<'a, TypeId, Box<A>>,
 }
-impl<'a, A: ?Sized + UncheckedAnyExt> Iterator for IterMut<'a, A> {
+impl<'a, A: ?Sized + Any> Iterator for IterMut<'a, A> {
     type Item = &'a mut A;
     #[inline] fn next(&mut self) -> Option<&'a mut A> { self.inner.next().map(|x| &mut **x.1) }
     #[inline] fn size_hint(&self) -> (usize, Option<usize>) { self.inner.size_hint() }
 }
-impl<'a, A: ?Sized + UncheckedAnyExt> ExactSizeIterator for IterMut<'a, A> {
+impl<'a, A: ?Sized + Any> ExactSizeIterator for IterMut<'a, A> {
     #[inline] fn len(&self) -> usize { self.inner.len() }
 }
 
 /// `RawMap` move iterator.
-pub struct IntoIter<A: ?Sized + UncheckedAnyExt> {
+pub struct IntoIter<A: ?Sized + Any> {
     inner: hash_map::IntoIter<TypeId, Box<A>>,
 }
-impl<A: ?Sized + UncheckedAnyExt> Iterator for IntoIter<A> {
+impl<A: ?Sized + Any> Iterator for IntoIter<A> {
     type Item = Box<A>;
     #[inline] fn next(&mut self) -> Option<Box<A>> { self.inner.next().map(|x| x.1) }
     #[inline] fn size_hint(&self) -> (usize, Option<usize>) { self.inner.size_hint() }
 }
-impl<A: ?Sized + UncheckedAnyExt> ExactSizeIterator for IntoIter<A> {
+impl<A: ?Sized + Any> ExactSizeIterator for IntoIter<A> {
     #[inline] fn len(&self) -> usize { self.inner.len() }
 }
 
 /// `RawMap` drain iterator.
-pub struct Drain<'a, A: ?Sized + UncheckedAnyExt> {
+pub struct Drain<'a, A: ?Sized + Any> {
     inner: hash_map::Drain<'a, TypeId, Box<A>>,
 }
-impl<'a, A: ?Sized + UncheckedAnyExt> Iterator for Drain<'a, A> {
+impl<'a, A: ?Sized + Any> Iterator for Drain<'a, A> {
     type Item = Box<A>;
     #[inline] fn next(&mut self) -> Option<Box<A>> { self.inner.next().map(|x| x.1) }
     #[inline] fn size_hint(&self) -> (usize, Option<usize>) { self.inner.size_hint() }
 }
-impl<'a, A: ?Sized + UncheckedAnyExt> ExactSizeIterator for Drain<'a, A> {
+impl<'a, A: ?Sized + Any> ExactSizeIterator for Drain<'a, A> {
     #[inline] fn len(&self) -> usize { self.inner.len() }
 }
 
-impl<A: ?Sized + UncheckedAnyExt> RawMap<A> {
+impl<A: ?Sized + Any> RawMap<A> {
     /// An iterator visiting all entries in arbitrary order.
     ///
     /// Iterator element type is `&Any`.
@@ -228,7 +228,7 @@ impl<A: ?Sized + UncheckedAnyExt> RawMap<A> {
 
 }
 
-impl<A: ?Sized + UncheckedAnyExt, Q> Index<Q> for RawMap<A> where TypeId: Borrow<Q>, Q: Eq + Hash {
+impl<A: ?Sized + Any, Q> Index<Q> for RawMap<A> where TypeId: Borrow<Q>, Q: Eq + Hash {
     type Output = A;
 
     #[inline]
@@ -237,14 +237,14 @@ impl<A: ?Sized + UncheckedAnyExt, Q> Index<Q> for RawMap<A> where TypeId: Borrow
     }
 }
 
-impl<A: ?Sized + UncheckedAnyExt, Q> IndexMut<Q> for RawMap<A> where TypeId: Borrow<Q>, Q: Eq + Hash {
+impl<A: ?Sized + Any, Q> IndexMut<Q> for RawMap<A> where TypeId: Borrow<Q>, Q: Eq + Hash {
     #[inline]
     fn index_mut(&mut self, index: Q) -> &mut A {
         self.get_mut(&index).expect("no entry found for key")
     }
 }
 
-impl<A: ?Sized + UncheckedAnyExt> IntoIterator for RawMap<A> {
+impl<A: ?Sized + Any> IntoIterator for RawMap<A> {
     type Item = Box<A>;
     type IntoIter = IntoIter<A>;
 
@@ -257,24 +257,24 @@ impl<A: ?Sized + UncheckedAnyExt> IntoIterator for RawMap<A> {
 }
 
 /// A view into a single occupied location in a `RawMap`.
-pub struct OccupiedEntry<'a, A: ?Sized + UncheckedAnyExt> {
+pub struct OccupiedEntry<'a, A: ?Sized + Any> {
     inner: hash_map::OccupiedEntry<'a, TypeId, Box<A>>,
 }
 
 /// A view into a single empty location in a `RawMap`.
-pub struct VacantEntry<'a, A: ?Sized + UncheckedAnyExt> {
+pub struct VacantEntry<'a, A: ?Sized + Any> {
     inner: hash_map::VacantEntry<'a, TypeId, Box<A>>,
 }
 
 /// A view into a single location in a `RawMap`, which may be vacant or occupied.
-pub enum Entry<'a, A: ?Sized + UncheckedAnyExt> {
+pub enum Entry<'a, A: ?Sized + Any> {
     /// An occupied Entry
     Occupied(OccupiedEntry<'a, A>),
     /// A vacant Entry
     Vacant(VacantEntry<'a, A>),
 }
 
-impl<'a, A: ?Sized + UncheckedAnyExt> Entry<'a, A> {
+impl<'a, A: ?Sized + Any> Entry<'a, A> {
     /// Ensures a value is in the entry by inserting the default if empty, and returns
     /// a mutable reference to the value in the entry.
     ///
@@ -302,7 +302,7 @@ impl<'a, A: ?Sized + UncheckedAnyExt> Entry<'a, A> {
     }
 }
 
-impl<'a, A: ?Sized + UncheckedAnyExt> OccupiedEntry<'a, A> {
+impl<'a, A: ?Sized + Any> OccupiedEntry<'a, A> {
     /// Gets a reference to the value in the entry.
     #[inline]
     pub fn get(&self) -> &A {
@@ -338,7 +338,7 @@ impl<'a, A: ?Sized + UncheckedAnyExt> OccupiedEntry<'a, A> {
     }
 }
 
-impl<'a, A: ?Sized + UncheckedAnyExt> VacantEntry<'a, A> {
+impl<'a, A: ?Sized + Any> VacantEntry<'a, A> {
     /// Sets the value of the entry with the VacantEntry's key,
     /// and returns a mutable reference to it
     ///

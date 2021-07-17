@@ -31,7 +31,6 @@ It’s not possible to remove all unsafety from this library without also removi
 
 - Remove the genericness of it all;
 - Merge `anymap::raw` into the normal interface, flattening it;
-- Change things like `.map(|any| unsafe { any.downcast_unchecked() })` to `.and_then(|any| any.downcast())` (performance cost: one extra superfluous type ID comparison, indirect);
 - Ditch the `TypeIdHasher` since transmuting a `TypeId` is right out (cost: SIP mangling of a u64 on every access).
 
 Yeah, the performance costs of going safe are quite small. The more serious matters are the loss of `Clone` and maybe `Send + Sync`.

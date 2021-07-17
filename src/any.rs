@@ -51,21 +51,57 @@ macro_rules! define {
     ($(#[doc = $doc:expr])* Any trait) => {
         $(#[doc = $doc])*
         /// See also [`CloneAny`](trait.CloneAny.html) for a cloneable version of this trait.
-        pub trait Any: StdAny { }
-        impl<T: StdAny> Any for T { }
+        pub trait Any: StdAny {
+            /// Upcast to an [`std::any::Any`]
+            fn as_any_ref(&self) -> &dyn StdAny;
+            /// Upcast to a mut [`std::any::Any`]
+            fn as_any_ref_mut(&mut self) -> &mut dyn StdAny;
+            /// Upcast to a Box of [`std::any::Any`]
+            fn as_any_box(self: Box<Self>) -> Box<dyn StdAny>;
+        }
+        impl<T: StdAny> Any for T {
+            #[inline]
+            fn as_any_ref(&self) -> &dyn StdAny { self }
+            #[inline]
+            fn as_any_ref_mut(&mut self) -> &mut dyn StdAny { self }
+            #[inline]
+            fn as_any_box(self: Box<Self>) -> Box<dyn StdAny> { self }
+        }
     };
 }
 
-#[allow(missing_docs)] // Bogus warning (it’s not public outside the crate), ☹
-pub trait UncheckedAnyExt: Any {
-    unsafe fn downcast_ref_unchecked<T: Any>(&self) -> &T;
-    unsafe fn downcast_mut_unchecked<T: Any>(&mut self) -> &mut T;
-    unsafe fn downcast_unchecked<T: Any>(self: Box<Self>) -> Box<T>;
+#[inline]
+pub (crate) unsafe fn lateral_ref_unchecked<U: Any + ?Sized, T: Any>(any: &U) -> &T {
+    let std_ref = any.as_any_ref();
+    &*(std_ref as *const dyn StdAny as *const T)
+    //match <dyn StdAny>::downcast_ref::<T>(any.as_any_ref()) {
+    //    Some(r) => r,
+    //    None => std::hint::unreachable_unchecked(),
+    //}
+}
+#[inline]
+pub (crate) unsafe fn lateral_mut_unchecked<U: Any + ?Sized, T: Any>(any: &mut U) -> &mut T {
+    let std_ref = any.as_any_ref_mut();
+    &mut *(std_ref as *mut dyn StdAny as *mut T)
+    //match <dyn StdAny>::downcast_mut::<T>(any.as_any_ref_mut()) {
+    //    Some(r) => r,
+    //    None => std::hint::unreachable_unchecked(),
+    //}
+}
+#[inline]
+pub (crate) unsafe fn lateral_boxcast_unchecked<U: Any + ?Sized, T: Any>(any: Box<U>) -> Box<T> {
+    let std_box = any.as_any_box();
+    let raw: *mut dyn StdAny = Box::into_raw(std_box);
+    Box::from_raw(raw as *mut T)
+    //match std_box.downcast() {
+    //    Ok(r) => r,
+    //    Err(_) => std::hint::unreachable_unchecked(),
+    //}
 }
 
 #[doc(hidden)]
 /// A trait for the conversion of an object into a boxed trait object.
-pub trait IntoBox<A: ?Sized + UncheckedAnyExt>: Any {
+pub trait IntoBox<A: ?Sized>: Any {
     /// Convert self into the appropriate boxed form.
     fn into_box(self) -> Box<A>;
 }
@@ -76,23 +112,6 @@ macro_rules! implement {
             #[inline]
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.pad(stringify!($base $(+ $bounds)*))
-            }
-        }
-
-        impl UncheckedAnyExt for dyn $base $(+ $bounds)* {
-            #[inline]
-            unsafe fn downcast_ref_unchecked<T: 'static>(&self) -> &T {
-                &*(self as *const Self as *const T)
-            }
-
-            #[inline]
-            unsafe fn downcast_mut_unchecked<T: 'static>(&mut self) -> &mut T {
-                &mut *(self as *mut Self as *mut T)
-            }
-
-            #[inline]
-            unsafe fn downcast_unchecked<T: 'static>(self: Box<Self>) -> Box<T> {
-                Box::from_raw(Box::into_raw(self) as *mut T)
             }
         }
 
