@@ -3,7 +3,7 @@
 //! This stuff is all based on `std::any`, but goes a little further, with `CloneAny` being a
 //! cloneable `Any` and with the `Send` and `Sync` bounds possible on both `Any` and `CloneAny`.
 
-use dyn_clone::{clone_trait_object, DynClone};
+pub use dyn_clone::{clone_trait_object, DynClone};
 use std::any::Any as StdAny;
 use std::fmt;
 
