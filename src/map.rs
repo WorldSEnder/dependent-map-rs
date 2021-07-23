@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use core::hash::BuildHasher;
 use dyn_clone::DynClone;
 use hashbrown::raw::Bucket;
@@ -175,13 +176,6 @@ impl<E: 'static + ?Sized, I: ?Sized + HashableTrait> RawEntry<E, I> {
     {
         self.inner.any_mut().downcast_mut::<InnerEntry<E, A>>()
     }
-
-    fn hash(&self, h: &mut I::Hasher) {
-        // update with hash of type id
-        self.inner.any_ref().type_id().hash(h);
-        // update with contained ref
-        self.inner.specific_hash(h);
-    }
 }
 
 type DynStorage<S> = dyn HashableAny<<S as BuildHasher>::Hasher>;
@@ -198,14 +192,6 @@ impl<E: 'static + ?Sized, I: ?Sized> RawEntry<E, I> {
             _marker: std::marker::PhantomData,
         }
     }
-}
-
-fn make_insert_hash<H: Hasher, K>(mut state: H, val: &K) -> u64
-where
-    K: Hash,
-{
-    val.hash(&mut state);
-    state.finish()
 }
 
 /// A hash map implemented with quadratic probing and SIMD lookup.
@@ -362,6 +348,18 @@ impl<
             None => unsafe { std::hint::unreachable_unchecked() },
         }
     }
+    /// Insert an entry, by converting the key into an entry.
+    ///
+    /// Returns mutable access to inserted value.
+    pub fn insert_into(
+        self,
+    ) -> &'a mut ValueAt<E, A>
+    where
+        I: CreateEntry<A, E>,
+        EntryAt<E, A>: From<KeyAt<E, A>>
+    {
+        self.insert(|k| k.into())
+    }
 }
 
 /// An entry in an [`AnyMap`]
@@ -421,7 +419,19 @@ fn hash_def_entry<
     e: &RawEntry<E, I>,
 ) -> u64 {
     let mut hasher = state.build_hasher();
-    e.hash(&mut hasher);
+    e.inner.any_ref().type_id().hash(&mut hasher);
+    e.inner.specific_hash(&mut hasher);
+    hasher.finish()
+}
+fn hash_def_key<
+    Q: ?Sized + Hash,
+    A: 'static + ?Sized,
+    E: 'static + ?Sized + EntryFamily<A>,
+    S: 'static + BuildHasher,
+>(state: &S, key: &Q) -> u64 {
+    let mut hasher = state.build_hasher();
+    TypeId::of::<InnerEntry<E, A>>().hash(&mut hasher);
+    key.hash(&mut hasher);
     hasher.finish()
 }
 
@@ -459,8 +469,9 @@ impl<
         I: ?Sized + HashableTrait<Hasher = S::Hasher>,
     > AnyMap<E, S, I>
 {
-    fn hash_key<Q: ?Sized + Hash>(&self, key: &Q) -> u64 {
-        make_insert_hash(self.hash_state.build_hasher(), &key)
+    fn hash_key<A: 'static + ?Sized, Q: ?Sized + Hash>(&self, key: &Q) -> u64
+    where E: EntryFamily<A> {
+        hash_def_key::<_, A, E, S>(&self.hash_state, key)
     }
     fn get_inner<A: 'static + ?Sized, Q: ?Sized>(&self, key: &Q) -> Option<&InnerEntry<E, A>>
     where
@@ -468,7 +479,7 @@ impl<
         KeyAt<E, A>: Borrow<Q>,
         Q: Hash + Eq,
     {
-        let hash = self.hash_key(key);
+        let hash = self.hash_key(&key);
         let entry = self.raw.get(hash, equivalent_key(key));
         match entry {
             Some(e) => match e.downcast_ref() {
@@ -553,6 +564,19 @@ impl<
     {
         self.get_inner(k).is_some()
     }
+    /// Returns a reference to the value corresponding to the key.
+    pub fn get<A: 'static + ?Sized, Q: ?Sized>(&self, k: &Q) -> Option<&EntryAt<E, A>>
+    where
+        E: EntryFamily<A>,
+        KeyAt<E, A>: Borrow<Q>,
+        Q: Hash + Eq,
+    {
+        // Avoid `Option::map` because it bloats LLVM IR.
+        match self.get_inner::<A, Q>(k) {
+            Some(inner) => Some(inner),
+            None => None,
+        }
+    }
     /// Returns a mutable reference to the value corresponding to the key.
     pub fn get_mut<A: 'static + ?Sized, Q: ?Sized>(&mut self, k: &Q) -> Option<&mut ValueAt<E, A>>
     where
@@ -572,14 +596,16 @@ impl<
     ///
     /// Otherwise, the entry is fully replaced and `Some(old)` where `old` is the old entry is returned.
     /// Note that this differs from [`Self::insert`] where the key is not updated.
-    pub fn insert_entry<A: 'static + ?Sized>(
+    pub fn insert<A: 'static + ?Sized, P: ?Sized>(
         &mut self,
-        entry: EntryAt<E, A>,
+        entry: P,
     ) -> Option<EntryAt<E, A>>
     where
         E: EntryFamily<A>,
         I: CreateEntry<A, E>,
+        P: Into<EntryAt<E, A>>,
     {
+        let entry = entry.into();
         let key = entry.split_ref().0;
         let hash = self.hash_key(key);
         if let Some(existing) = self.get_inner_mut_by_hash(hash, key) {

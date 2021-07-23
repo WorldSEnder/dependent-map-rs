@@ -1,9 +1,12 @@
-//! This crate provides the `AnyMap` type, a safe and convenient store for one value of each type.
+//! This crate provides the [`AnyMap`] type, a safe and convenient store for one value of each type.
 
 #![warn(missing_docs, unused_results)]
 
 mod map;
 pub use map::*;
+// #[cfg(tests)]
+mod tests;
+
 
 /*
 use std::any::TypeId;
