@@ -2,6 +2,10 @@
 
 #![warn(missing_docs, unused_results)]
 
+mod map;
+pub use map::*;
+
+/*
 use std::any::TypeId;
 use std::marker::PhantomData;
 
@@ -430,25 +434,31 @@ mod tests {
         fn assert_sync<T: Sync>() { }
         fn assert_clone<T: Clone>() { }
         fn assert_debug<T: ::std::fmt::Debug>() { }
+
         assert_send::<Map<dyn Any + Send>>();
         assert_send::<Map<dyn Any + Send + Sync>>();
-        assert_sync::<Map<dyn Any + Sync>>();
-        assert_sync::<Map<dyn Any + Send + Sync>>();
-        assert_debug::<Map<dyn Any>>();
-        assert_debug::<Map<dyn Any + Send>>();
-        assert_debug::<Map<dyn Any + Sync>>();
-        assert_debug::<Map<dyn Any + Send + Sync>>();
         assert_send::<Map<dyn CloneAny + Send>>();
         assert_send::<Map<dyn CloneAny + Send + Sync>>();
+
+        assert_sync::<Map<dyn Any + Sync>>();
+        assert_sync::<Map<dyn Any + Send + Sync>>();
         assert_sync::<Map<dyn CloneAny + Sync>>();
         assert_sync::<Map<dyn CloneAny + Send + Sync>>();
+
         assert_clone::<Map<dyn CloneAny + Send>>();
         assert_clone::<Map<dyn CloneAny + Send + Sync>>();
         assert_clone::<Map<dyn CloneAny + Sync>>();
         assert_clone::<Map<dyn CloneAny + Send + Sync>>();
+
+        assert_debug::<Map<dyn Any>>();
+        assert_debug::<Map<dyn Any + Send>>();
+        assert_debug::<Map<dyn Any + Sync>>();
+        assert_debug::<Map<dyn Any + Send + Sync>>();
+
         assert_debug::<Map<dyn CloneAny>>();
         assert_debug::<Map<dyn CloneAny + Send>>();
         assert_debug::<Map<dyn CloneAny + Sync>>();
         assert_debug::<Map<dyn CloneAny + Send + Sync>>();
     }
 }
+*/
