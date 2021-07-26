@@ -13,4 +13,4 @@ edition = "2018"
 
 [dependencies]
 hashbrown = { version = "^0.11", features = ["raw"] }
-dyn-clone = "*"
+dyn-clone = "^1.0.4"
