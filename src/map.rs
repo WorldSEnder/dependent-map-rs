@@ -10,6 +10,14 @@ use std::hash::Hasher;
 use std::ops::Deref;
 use std::ops::DerefMut;
 
+#[inline(always)]
+fn unreachable_internal_invariant<T>(_reason: &'static str) -> T {
+    #[cfg(debug_assertions)]
+    { unreachable!(_reason) }
+    #[cfg(not(debug_assertions))]
+    unsafe { std::hint::unreachable_unchecked() }
+}
+
 /// internal trait
 #[allow(missing_docs)]
 pub trait HashableAny<H: Hasher>: Any {
@@ -242,7 +250,7 @@ impl<
         match inner_ref.downcast_ref() {
             Some(r) => r,
             // invariant of how we obtained the entry
-            None => unsafe { std::hint::unreachable_unchecked() },
+            None => unreachable_internal_invariant("the entry is constructed pointing only at correct types"),
         }
     }
     fn entry_mut(&mut self) -> &mut InnerEntry<E, A> {
@@ -253,7 +261,7 @@ impl<
         match inner_ref.downcast_mut() {
             Some(r) => r,
             // invariant of how we obtained the entry
-            None => unsafe { std::hint::unreachable_unchecked() },
+            None => unreachable_internal_invariant("the entry is constructed pointing only at correct types"),
         }
     }
     /// Get the key used during lookup of the entry
@@ -295,7 +303,7 @@ impl<
         match raw.downcast() {
             Some(r) => r,
             // invariant of how we obtained the entry
-            None => unsafe { std::hint::unreachable_unchecked() },
+            None => unreachable_internal_invariant("the entry is constructed pointing only at correct types"),
         }
         .entry
     }
@@ -345,7 +353,7 @@ impl<
         let ins_entry = self.table.raw.insert_entry(self.hash, raw_entry, hashfn);
         match ins_entry.downcast_mut() {
             Some(m) => m.value_mut(),
-            None => unsafe { std::hint::unreachable_unchecked() },
+            None => unreachable_internal_invariant("inserted type is correct"),
         }
     }
     /// Insert an entry, by converting the key into an entry.
@@ -485,7 +493,7 @@ impl<
             Some(e) => match e.downcast_ref() {
                 r @ Some(_) => r,
                 // safety: invariant for equivalent key checking downcast succeeds
-                None => unsafe { std::hint::unreachable_unchecked() },
+                None => unreachable_internal_invariant("hash+equivalent key for the correct type"),
             },
             None => None,
         }
@@ -506,7 +514,7 @@ impl<
             Some(e) => match e.downcast_mut() {
                 r @ Some(_) => r,
                 // safety: invariant for equivalent key checking downcast succeeds
-                None => unsafe { std::hint::unreachable_unchecked() },
+                None => unreachable_internal_invariant("hash+equivalent key for the correct type"),
             },
             None => None,
         }
@@ -630,7 +638,7 @@ impl<
         match self.raw.remove_entry(hash, equivalent_key(key)) {
             Some(v) => match v.downcast() {
                 Some(raw) => Some(raw.entry),
-                None => unsafe { std::hint::unreachable_unchecked() },
+                None => unreachable_internal_invariant("hash+equivalent key for the correct type"),
             },
             None => None,
         }
