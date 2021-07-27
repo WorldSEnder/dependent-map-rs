@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use crate::*;
 use crate::families::*;
 
@@ -104,6 +105,7 @@ fn test_varieties() {
     fn assert_send<T: Send>() { }
     fn assert_sync<T: Sync>() { }
     fn assert_clone<T: Clone>() { }
+    fn assert_debug<T: Debug>() { }
 
     type MapSend = Map<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Send>;
     type MapSync = Map<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Sync>;
@@ -121,4 +123,11 @@ fn test_varieties() {
         let _ = map.insert(A(1));
     }
     assert_clone::<CloneableMap<Singleton>>();
+    {
+        let mut map: DebuggableMap<MultiValued> = Default::default();
+        let _ = map.insert((0, A(42)));
+        let _ = map.insert((1, B(1337)));
+        println!("{:?}", map);
+    }
+    assert_debug::<DebuggableMap<Singleton>>();
 }

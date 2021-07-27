@@ -3,6 +3,8 @@ use hashbrown::raw::{Bucket, RawTable};
 use std::any::Any;
 use std::any::TypeId;
 use std::borrow::Borrow;
+use std::fmt::Debug;
+use std::fmt::Formatter;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::marker::PhantomData;
@@ -67,14 +69,27 @@ pub unsafe trait CreateEntry<A: ?Sized, E: ?Sized + EntryFamily<A>> {
     /// Create a boxed up internal storage from an entry
     fn from_entry(e: EntryAt<E, A>) -> Box<Self>;
 }
-/// internal trait
+
+/// Glue trait
+/// 
+/// If you get an error mentioned that this is not implemented, make sure you are using
+/// a storage type that captures the Clone interface of entries, such as in [`CloneableMap`].
 pub trait CloneableHashableAny<H: Hasher>: HashableAny<H> + DynClone {}
 impl<H: Hasher, T> CloneableHashableAny<H> for T where T: HashableAny<H> + DynClone {}
-/// internal trait
+/// Glue trait
+/// 
+/// If you get an error mentioned that this is not implemented, make sure you are using
+/// a storage type that captures the PartialEq interface of entries, such as in [`ComparableMap`].
 pub trait PartialEqHashableAny<H: Hasher>: HashableAny<H> + DynPartialEq {}
 impl<H: Hasher, T> PartialEqHashableAny<H> for T where T: HashableAny<H> + DynPartialEq {}
+/// Glue trait
+/// 
+/// If you get an error mentioned that this is not implemented, make sure you are using
+/// a storage type that captures the Debug interface of entries, such as in [`DebuggableMap`].
+pub trait DebugHashableAny<H: Hasher>: HashableAny<H> + DebugEntry {}
+impl<H: Hasher, T> DebugHashableAny<H> for T where T: HashableAny<H> + DebugEntry {}
 
-/// Glue trait of entries that be stored in a hashmap-based type-dependent map.
+/// Trait of entries that be stored in a hashmap-based type-dependent map.
 pub trait HashEntry {
     /// The key part of the entry
     type Key: Eq + Hash;
@@ -99,10 +114,10 @@ pub trait DynPartialEq {
 }
 impl<T: 'static + PartialEq<Self>> DynPartialEq for T {
     unsafe fn eq_dyn_unsafe(&self, rhs: &dyn Any) -> bool {
-        // FIXME: speed this up with unsafe magic
         if !rhs.is::<Self>() {
             unreachable_internal_invariant("invariant for safely invoking this trait method");
         }
+        // FIXME: speed this up with unsafe magic?
         Some(self) == rhs.downcast_ref::<Self>()
     }
 
@@ -118,6 +133,29 @@ impl<T: 'static + PartialEq<Self>> DynPartialEq for T {
 pub trait DynEq: DynPartialEq {}
 impl<T: 'static + Eq> DynEq for T {}
 
+/// [`Debug`] for entries
+pub trait DebugEntry {
+    /// Format the key of the entry
+    fn fmt_key(&self, _: &mut Formatter<'_>) -> std::fmt::Result;
+    /// Format the value of the entry
+    fn fmt_value(&self, _: &mut Formatter<'_>) -> std::fmt::Result;
+}
+impl<A: 'static + ?Sized, E: ?Sized + EntryFamily<A>> DebugEntry for InnerEntry<E, A>
+where
+    KeyAt<E, A>: Debug,
+    ValueAt<E, A>: Debug,
+{
+    fn fmt_key(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("")
+            .field("type", &std::any::type_name::<A>())
+            .field("key", self.key())
+            .finish()
+    }
+    fn fmt_value(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.value().fmt(f)
+    }
+}
+
 /// Formal family of the entry types in the map. If `E` is such a family, the [`Map`] maps,
 /// at least intuitively, a pair of a type and an associated key to the associated value:
 /// `(A: ?Sized, key: KeyAt<E, A>) -> value: ValueAt<E, A>`
@@ -132,6 +170,7 @@ pub type KeyAt<E, A> = <EntryAt<E, A> as HashEntry>::Key;
 /// Convenience type alias for the value part of the [`HashEntry`] of an [`EntryFamily`] at a specific argument.
 pub type ValueAt<E, A> = <EntryAt<E, A> as HashEntry>::Value;
 
+// FIXME: using Box here correct? I have no idea what the correct type to contain in PhantomData is, actually.
 type NonOwningPhantomPointer<A> = PhantomData<Box<A>>;
 
 #[repr(transparent)]
@@ -197,6 +236,9 @@ where
 
 struct RawEntry<E: ?Sized, I: ?Sized> {
     // Not actually *Any*, but a concrete instantiation of InnerEntry<_, E>
+    // Implementation note: prefer to use `.inner()` or `.inner_mut()` when
+    // using the Any interface, otherwise you might unintentionally work on the
+    // Box instead of its content.
     inner: Box<I>,
     _marker: NonOwningPhantomPointer<E>,
 }
@@ -220,11 +262,11 @@ where
 }
 
 macro_rules! create_entry_impl {
-    ($hashable_name:path$( where $bounded_type:ty: $bound:tt$( + $other_bounds:tt)*,)?) => {
+    ($hashable_name:path $(where $($bounded_type:ty: $bound:tt$( + $other_bounds:tt)*,)*)?) => {
         #[cfg(not(feature = "unstable_features"))]
         unsafe impl<H: Hasher, A: 'static + ?Sized, E: 'static + ?Sized + EntryFamily<A>>
             CreateEntry<A, E> for dyn $hashable_name
-        where $($bounded_type: $bound $(+ $other_bounds)*)?
+        where $($($bounded_type: $bound $(+ $other_bounds)*,)*)?
         {
             fn from_entry(entry: EntryAt<E, A>) -> std::boxed::Box<Self> {
                 let inner_entry: InnerEntry<E, A> = InnerEntry {
@@ -239,6 +281,7 @@ macro_rules! create_entry_impl {
 create_entry_impl!(HashableAny<H>);
 create_entry_impl!(CloneableHashableAny<H> where EntryAt<E, A>: Clone,);
 create_entry_impl!(PartialEqHashableAny<H> where EntryAt<E, A>: PartialEq,);
+create_entry_impl!(DebugHashableAny<H> where KeyAt<E, A>: Debug, ValueAt<E, A>: Debug,);
 
 impl<E: ?Sized, I: ?Sized> RawEntry<E, I> {
     #[inline]
@@ -282,10 +325,6 @@ impl<E: 'static + ?Sized, I: ?Sized + RefAny> RawEntry<E, I> {
     }
 }
 
-type DynStorage<S> = dyn HashableAny<<S as BuildHasher>::Hasher>;
-type CloneDynStorage<S> = dyn CloneableHashableAny<<S as BuildHasher>::Hasher>;
-type PartialEqDynStorage<S> = dyn PartialEqHashableAny<<S as BuildHasher>::Hasher>;
-
 impl<E: ?Sized, I: ?Sized> RawEntry<E, I> {
     fn new<A: ?Sized>(entry: EntryAt<E, A>) -> Self
     where
@@ -304,6 +343,8 @@ pub type DefaultHashBuilder = hashbrown::hash_map::DefaultHashBuilder;
 /// The Hasher type corresponding to [`DefaultHashBuilder`]
 pub type DefaultHasher = <DefaultHashBuilder as BuildHasher>::Hasher;
 
+type DynStorage<S> = dyn HashableAny<<S as BuildHasher>::Hasher>;
+
 /// A hash map implemented with quadratic probing and SIMD lookup.
 ///
 /// The type of the entry stored in the map depends on the type of key used.
@@ -319,10 +360,28 @@ pub struct Map<
     raw: RawTable<RawEntry<E, I>>,
 }
 
+type CloneDynStorage<S> = dyn CloneableHashableAny<<S as BuildHasher>::Hasher>;
+type PartialEqDynStorage<S> = dyn PartialEqHashableAny<<S as BuildHasher>::Hasher>;
+type DebugDynStorage<S> = dyn DebugHashableAny<<S as BuildHasher>::Hasher>;
+
 /// Type-alias for an [`Map`] that can be cloned.
+/// 
+/// Note that this works because the trait object captures [`DynClone`]. If you want to combine
+/// multiple capabilites, such as Clone + Debug, write a combined trait and use that as the
+/// third argument to [`Map`].
 pub type CloneableMap<E, S = DefaultHashBuilder> = Map<E, S, CloneDynStorage<S>>;
 /// Type-alias for an [`Map`] that can be equality compared.
+/// 
+/// Note that this works because the trait object captures [`DynPartialEq`]. If you want to combine
+/// multiple capabilites, such as PartialEq + Debug, write a combined trait and use that as the
+/// third argument to [`Map`].
 pub type ComparableMap<E, S = DefaultHashBuilder> = Map<E, S, PartialEqDynStorage<S>>;
+/// Type-alias for an [`Map`] that implements [`Debug`].
+/// 
+/// Note that this works because the trait object captures [`DebugEntry`]. If you want to combine
+/// multiple capabilites, such as PartialEq + Debug, write a combined trait and use that as the
+/// third argument to [`Map`].
+pub type DebuggableMap<E, S = DefaultHashBuilder> = Map<E, S, DebugDynStorage<S>>;
 
 /// An occupied entry in an [`Map`], containing the key that was used during lookup and the
 /// bucket where the entry is placed in the map. Can save on repeated lookups of the same
@@ -843,4 +902,27 @@ impl<
 impl<E: 'static + ?Sized, S: Default + BuildHasher, I: ?Sized + HashableAny<S::Hasher> + DynEq> Eq
     for Map<E, S, I>
 {
+}
+
+struct SomeKey<'a, E: ?Sized, I: ?Sized>(&'a RawEntry<E, I>);
+struct SomeValue<'a, E: ?Sized, I: ?Sized>(&'a RawEntry<E, I>);
+impl<'a, E: ?Sized, I: ?Sized + DebugEntry> Debug for SomeKey<'a, E, I> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.inner().fmt_key(f)
+    }
+}
+impl<'a, E: ?Sized, I: ?Sized + DebugEntry> Debug for SomeValue<'a, E, I> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.inner().fmt_value(f)
+    }
+}
+
+impl<E: 'static + ?Sized, S: Default + BuildHasher, I: ?Sized + HashableAny<S::Hasher> + DebugEntry>
+    Debug for Map<E, S, I>
+{
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> std::fmt::Result {
+        fmt.debug_map()
+            .entries(self.iter().map(|e| (SomeKey(e), SomeValue(e))))
+            .finish()
+    }
 }
