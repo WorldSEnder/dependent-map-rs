@@ -1,63 +1,53 @@
-#![feature(test)]
-
-extern crate dependent_map;
-
-extern crate test;
-
 use dependent_map::{Map, families::Singleton};
 
-use test::Bencher;
-use test::black_box;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-#[bench]
-fn insertion(b: &mut Bencher) {
-    b.iter(|| {
-        let mut data = Map::<Singleton>::new();
+fn insertion(b: &mut Criterion) {
+    b.bench_function("insertion", |b| b.iter(|| {
+        let mut data = black_box(Map::<Singleton>::new());
         for _ in 0..100 {
             let _ = data.insert(42);
         }
-    })
+    }));
 }
 
-#[bench]
-fn get_missing(b: &mut Bencher) {
-    b.iter(|| {
-        let data = Map::<Singleton>::new();
+fn get_missing(b: &mut Criterion) {
+    b.bench_function("get_missing", |b| b.iter(|| {
+        let data = black_box(Map::<Singleton>::new());
         for _ in 0..100 {
             assert_eq!(data.get_default::<i32>(), None);
         }
-    })
+    }));
 }
 
-#[bench]
-fn get_present(b: &mut Bencher) {
-    b.iter(|| {
+fn get_present(b: &mut Criterion) {
+    b.bench_function("get_present", |b| b.iter(|| {
         let mut data = Map::<Singleton>::new();
         let _ = data.insert(42);
+        let data = black_box(data);
         // These inner loops are a feeble attempt to drown the other factors.
         for _ in 0..100 {
             assert_eq!(**data.get_default::<i32>().expect(""), 42);
         }
-    })
+    }));
 }
 
 macro_rules! big_benchmarks {
     ($name:ident, $($T:ident)*) => (
-        #[bench]
-        fn $name(b: &mut Bencher) {
+        fn $name(b: &mut Criterion) {
             $(
                 struct $T(&'static str);
             )*
-
-            b.iter(|| {
-                let mut data = Map::<Singleton>::new();
+            b.bench_function(stringify!($name), |b| b.iter(|| {
+                let mut data = black_box(Map::<Singleton>::new());
                 $(
-                    let _ = black_box(data.insert($T(stringify!($T))));
+                    let _ = data.insert($T(stringify!($T)));
                 )*
+                let data = black_box(data);
                 $(
-                    let _ = black_box(data.get_default::<$T>());
+                    let _ = data.get_default::<$T>();
                 )*
-            })
+            }));
         }
     );
 }
@@ -83,3 +73,6 @@ big_benchmarks! {
     insert_and_get_on_26_types,
     A B C D E F G H I J K L M N O P Q R S T U V W X Y Z
 }
+
+criterion_group!(benches, insertion, get_missing, get_present, insert_and_get_on_260_types, insert_and_get_on_26_types);
+criterion_main!(benches);

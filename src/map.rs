@@ -107,12 +107,14 @@ pub trait DynPartialEq {
     unsafe fn eq_dyn_unsafe(&self, other: &dyn Any) -> bool;
     /// Compare equality against a trait object implementing Any.
     fn eq_dyn(&self, other: &dyn Any) -> bool;
+    #[inline]
     /// Compare inequality against a trait object implementing Any.
     fn ne_dyn(&self, other: &dyn Any) -> bool {
         !self.eq_dyn(other)
     }
 }
 impl<T: 'static + PartialEq<Self>> DynPartialEq for T {
+    #[inline]
     unsafe fn eq_dyn_unsafe(&self, rhs: &dyn Any) -> bool {
         if !rhs.is::<Self>() {
             unreachable_internal_invariant("invariant for safely invoking this trait method");
@@ -121,6 +123,7 @@ impl<T: 'static + PartialEq<Self>> DynPartialEq for T {
         Some(self) == rhs.downcast_ref::<Self>()
     }
 
+    #[inline]
     fn eq_dyn(&self, rhs: &dyn Any) -> bool {
         if rhs.is::<Self>() {
             unsafe { self.eq_dyn_unsafe(rhs) }
@@ -182,24 +185,29 @@ pub struct InnerEntry<E: ?Sized + EntryFamily<A>, A: ?Sized> {
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Deref for InnerEntry<E, A> {
     type Target = EntryAt<E, A>;
+    #[inline]
     fn deref(&self) -> &Self::Target {
         &self.entry
     }
 }
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> DerefMut for InnerEntry<E, A> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.entry
     }
 }
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> InnerEntry<E, A> {
+    #[inline]
     fn key(&self) -> &KeyAt<E, A> {
         self.split_ref().0
     }
+    #[inline]
     fn value(&self) -> &ValueAt<E, A> {
         self.split_ref().1
     }
+    #[inline]
     fn value_mut(&mut self) -> &mut ValueAt<E, A> {
         self.split_mut().1
     }
@@ -209,6 +217,7 @@ impl<A: ?Sized, E: ?Sized + EntryFamily<A>> PartialEq for InnerEntry<E, A>
 where
     EntryAt<E, A>: PartialEq,
 {
+    #[inline]
     fn eq(&self, rhs: &Self) -> bool {
         self.entry == rhs.entry
     }
@@ -217,6 +226,7 @@ where
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Eq for InnerEntry<E, A> where EntryAt<E, A>: Eq {}
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Hash for InnerEntry<E, A> {
+    #[inline]
     fn hash<H: Hasher>(&self, h: &mut H) {
         self.key().hash(h)
     }
@@ -226,6 +236,7 @@ impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Clone for InnerEntry<E, A>
 where
     EntryAt<E, A>: Clone,
 {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             entry: self.entry.clone(),
@@ -249,6 +260,7 @@ unsafe impl<A: 'static + ?Sized, E: 'static + ?Sized + EntryFamily<A>, I: ?Sized
 where
     InnerEntry<E, A>: std::marker::Unsize<I>,
 {
+    #[inline]
     fn from_entry(entry: EntryAt<E, A>) -> Box<Self>
     where
         E: EntryFamily<A>,
@@ -268,6 +280,7 @@ macro_rules! create_entry_impl {
             CreateEntry<A, E> for dyn $hashable_name
         where $($($bounded_type: $bound $(+ $other_bounds)*,)*)?
         {
+            #[inline]
             fn from_entry(entry: EntryAt<E, A>) -> std::boxed::Box<Self> {
                 let inner_entry: InnerEntry<E, A> = InnerEntry {
                     entry,
@@ -295,6 +308,7 @@ impl<E: ?Sized, I: ?Sized> RawEntry<E, I> {
 }
 // E is a nominal family describing the entries
 impl<E: 'static + ?Sized, I: ?Sized + RefAny> RawEntry<E, I> {
+    #[inline]
     fn downcast<A: 'static + ?Sized>(self) -> Option<InnerEntry<E, A>>
     where
         E: EntryFamily<A>,
@@ -308,6 +322,7 @@ impl<E: 'static + ?Sized, I: ?Sized + RefAny> RawEntry<E, I> {
         }
     }
 
+    #[inline]
     fn downcast_ref<A: 'static + ?Sized>(&self) -> Option<&InnerEntry<E, A>>
     where
         E: EntryFamily<A>,
@@ -315,6 +330,7 @@ impl<E: 'static + ?Sized, I: ?Sized + RefAny> RawEntry<E, I> {
         self.inner().any_ref().downcast_ref::<InnerEntry<E, A>>()
     }
 
+    #[inline]
     fn downcast_mut<A: 'static + ?Sized>(&mut self) -> Option<&mut InnerEntry<E, A>>
     where
         E: EntryFamily<A>,
@@ -326,6 +342,7 @@ impl<E: 'static + ?Sized, I: ?Sized + RefAny> RawEntry<E, I> {
 }
 
 impl<E: ?Sized, I: ?Sized> RawEntry<E, I> {
+    #[inline]
     fn new<A: ?Sized>(entry: EntryAt<E, A>) -> Self
     where
         E: EntryFamily<A>,
@@ -407,6 +424,7 @@ impl<
         I: ?Sized + HashableAny<S::Hasher>,
     > OccupiedEntry<'a, A, E, S, I>
 {
+    #[inline]
     fn entry(&self) -> &InnerEntry<E, A> {
         // holding a ref to the table, didn't rehash or reallocate
         let inner_ref = unsafe { self.elem.as_ref() };
@@ -418,6 +436,7 @@ impl<
             ),
         }
     }
+    #[inline]
     fn entry_mut(&mut self) -> &mut InnerEntry<E, A> {
         // holding a ref to the table, didn't rehash or reallocate
         let inner_ref = unsafe { self.elem.as_mut() };
@@ -431,16 +450,19 @@ impl<
             ),
         }
     }
+    #[inline]
     /// Get the key used during lookup of the entry
     pub fn key(&self) -> &KeyAt<E, A> {
         // FIXME: technically we have two keys: the one used during lookup and the one stored in the map.
         // maybe some apis want access to both?
         &self.key
     }
+    #[inline]
     /// Get the pair of (key, value) found in the map for this entry.
     pub fn hash_entry(&self) -> &EntryAt<E, A> {
         self.entry()
     }
+    #[inline]
     /// Get the pair of (key, value) found in the map for this entry.
     ///
     /// # Unsafe
@@ -450,19 +472,23 @@ impl<
         // FIXME: possibly should be unsafe, since it could modify the key (and thus the hashvalue) of the entry.
         self.entry_mut()
     }
+    #[inline]
     /// Get the value found in the map for this entry
     pub fn get(&self) -> &ValueAt<E, A> {
         self.entry().value()
     }
+    #[inline]
     /// Get the value found in the map for this entry
     pub fn get_mut(&mut self) -> &mut ValueAt<E, A> {
         self.entry_mut().value_mut()
     }
+    #[inline]
     /// Replace the value found in the map for this entry and return the old value
     pub fn insert(&mut self, value: ValueAt<E, A>) -> ValueAt<E, A> {
         let place = self.get_mut();
         std::mem::replace(place, value)
     }
+    #[inline]
     /// Remove and return the entry from the map
     pub fn remove_entry(self) -> EntryAt<E, A> {
         // holding a ref to the table, didn't rehash or reallocate
@@ -499,10 +525,12 @@ impl<
         I: ?Sized + HashableAny<S::Hasher>,
     > VacantEntry<'a, A, E, S, I>
 {
+    #[inline]
     /// Get the key that was used during lookup
     pub fn key(&self) -> &KeyAt<E, A> {
         &self.key
     }
+    #[inline]
     /// Take ownership of the key that was used during lookup
     pub fn into_key(self) -> KeyAt<E, A> {
         self.key
@@ -525,6 +553,7 @@ impl<
             None => unreachable_internal_invariant("inserted type is correct"),
         }
     }
+    #[inline]
     /// Insert an entry, by converting the key into an entry.
     ///
     /// Returns mutable access to inserted value.
@@ -552,6 +581,7 @@ pub enum Entry<
 }
 
 impl<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Map<E, S, I> {
+    #[inline]
     /// Create a new, empty, [`Map`].
     pub fn new() -> Self
     where
@@ -562,6 +592,7 @@ impl<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Map<E, S, I>
             hash_state: S::default(),
         }
     }
+    #[inline]
     /// Create a new, empty, [`Map`] with a specified initial capacity.
     pub fn with_capacity(capacity: usize) -> Self
     where
@@ -572,24 +603,29 @@ impl<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Map<E, S, I>
             hash_state: S::default(),
         }
     }
+    #[inline]
     /// Get the capacity of the backing storage.
     pub fn capacity(&self) -> usize {
         self.raw.capacity()
     }
+    #[inline]
     /// Get the number of occupied entries in the backing storage.
     pub fn len(&self) -> usize {
         self.raw.len()
     }
+    #[inline]
     /// Check if the map is empty, i.e. `len() == 0`.
     pub fn is_empty(&self) -> bool {
         self.raw.len() == 0
     }
+    #[inline]
     /// Clear the map, but preserve the currently reserved capacity.
     pub fn clear(&mut self) {
         self.raw.clear()
     }
 }
 
+#[inline]
 fn hash_def_entry<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>(
     state: &S,
     e: &RawEntry<E, I>,
@@ -600,6 +636,7 @@ fn hash_def_entry<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>
     hasher.finish()
 }
 
+#[inline]
 fn hash_def_key<
     Q: ?Sized + Hash,
     A: 'static + ?Sized,
@@ -645,12 +682,14 @@ fn make_hasher<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>(
 }
 
 impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Map<E, S, I> {
+    #[inline]
     fn hash_key<A: 'static + ?Sized, Q: ?Sized + Hash>(&self, key: &Q) -> u64
     where
         E: EntryFamily<A>,
     {
         hash_def_key::<_, A, E, S>(&self.hash_state, key)
     }
+    #[inline]
     fn get_inner<A: 'static + ?Sized, Q: ?Sized>(&self, key: &Q) -> Option<&InnerEntry<E, A>>
     where
         E: EntryFamily<A>,
@@ -669,6 +708,7 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
         }
     }
 
+    #[inline]
     fn get_inner_mut_by_hash<A: 'static + ?Sized, Q: ?Sized>(
         &mut self,
         hash: u64,
@@ -690,6 +730,7 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
         }
     }
 
+    #[inline]
     fn get_inner_mut<A: 'static + ?Sized, Q: ?Sized>(
         &mut self,
         key: &Q,
@@ -703,16 +744,19 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
         self.get_inner_mut_by_hash(hash, key)
     }
 
+    #[inline]
     /// Reserve storage to fit at least `additional` more entries without reallocating.
     pub fn reserve(&mut self, additional: usize) {
         let hashfn = make_hasher(&self.hash_state);
         self.raw.reserve(additional, hashfn)
     }
+    #[inline]
     /// Shrink storage to fit the currently used size.
     pub fn shrink_to_fit(&mut self) {
         let hashfn = make_hasher(&self.hash_state);
         self.raw.shrink_to(0, hashfn)
     }
+    #[inline]
     /// Lookup the entry at `key`.
     pub fn entry<A: 'static + ?Sized>(&mut self, key: KeyAt<E, A>) -> Entry<'_, A, E, S, I>
     where
@@ -733,6 +777,7 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
             }),
         }
     }
+    #[inline]
     /// Check if the map contains a value for the specified key.
     pub fn contains_key<A: 'static + ?Sized, Q: ?Sized>(&self, k: &Q) -> bool
     where
@@ -742,6 +787,7 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
     {
         self.get_inner(k).is_some()
     }
+    #[inline]
     /// Returns a reference to the value corresponding to the key.
     pub fn get<A: 'static + ?Sized, Q: ?Sized>(&self, k: &Q) -> Option<&EntryAt<E, A>>
     where
@@ -755,6 +801,7 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
             None => None,
         }
     }
+    #[inline]
     /// Returns a reference to the value corresponding to the default key.
     pub fn get_default<A: 'static + ?Sized>(&self) -> Option<&EntryAt<E, A>>
     where
@@ -763,6 +810,7 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
     {
         self.get(&Default::default())
     }
+    #[inline]
     /// Returns a mutable reference to the value corresponding to the key.
     pub fn get_mut<A: 'static + ?Sized, Q: ?Sized>(&mut self, k: &Q) -> Option<&mut ValueAt<E, A>>
     where
@@ -852,6 +900,7 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
 }
 
 impl<E: ?Sized, I: ?Sized + DynClone> Clone for RawEntry<E, I> {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             inner: dyn_clone::clone_box(&self.inner),
@@ -863,6 +912,7 @@ impl<E: ?Sized, I: ?Sized + DynClone> Clone for RawEntry<E, I> {
 impl<E: ?Sized, S: BuildHasher + Clone, I: ?Sized + HashableAny<S::Hasher> + DynClone> Clone
     for Map<E, S, I>
 {
+    #[inline]
     fn clone(&self) -> Self {
         Self {
             hash_state: self.hash_state.clone(),
@@ -874,6 +924,7 @@ impl<E: ?Sized, S: BuildHasher + Clone, I: ?Sized + HashableAny<S::Hasher> + Dyn
 impl<E: ?Sized, S: Default + BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Default
     for Map<E, S, I>
 {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
