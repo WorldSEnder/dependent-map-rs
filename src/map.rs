@@ -90,8 +90,10 @@ pub trait DynPartialEq {
 }
 impl<T: 'static + PartialEq<Self>> DynPartialEq for T {
     unsafe fn eq_dyn_unsafe(&self, rhs: &dyn Any) -> bool {
+        // FIXME: speed this up with unsafe magic
         Some(self) == rhs.downcast_ref::<Self>()
     }
+
     fn eq_dyn(&self, rhs: &dyn Any) -> bool {
         if rhs.is::<Self>() {
             unsafe { self.eq_dyn_unsafe(rhs) }
