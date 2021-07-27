@@ -1,12 +1,11 @@
 //! This crate provides the [`AnyMap`] type, a safe and convenient store for one value of each type.
-
+#![cfg_attr(feature = "unstable_features", feature(unsize, coerce_unsized))]
 #![warn(missing_docs, unused_results)]
 
 mod map;
 pub use map::*;
-// #[cfg(tests)]
+#[cfg(test)]
 mod tests;
-
 
 /*
 use std::any::TypeId;
@@ -14,83 +13,6 @@ use std::marker::PhantomData;
 
 use raw::RawMap;
 use any::{IntoBox, Any, lateral_ref_unchecked, lateral_mut_unchecked, lateral_boxcast_unchecked};
-
-macro_rules! impl_common_methods {
-    (
-        field: $t:ident.$field:ident;
-        new() => $new:expr;
-        with_capacity($with_capacity_arg:ident) => $with_capacity:expr;
-    ) => {
-        impl<A: ?Sized + Any> $t<A> {
-            /// Create an empty collection.
-            #[inline]
-            pub fn new() -> $t<A> {
-                $t {
-                    $field: $new,
-                }
-            }
-
-            /// Creates an empty collection with the given initial capacity.
-            #[inline]
-            pub fn with_capacity($with_capacity_arg: usize) -> $t<A> {
-                $t {
-                    $field: $with_capacity,
-                }
-            }
-
-            /// Returns the number of elements the collection can hold without reallocating.
-            #[inline]
-            pub fn capacity(&self) -> usize {
-                self.$field.capacity()
-            }
-
-            /// Reserves capacity for at least `additional` more elements to be inserted
-            /// in the collection. The collection may reserve more space to avoid
-            /// frequent reallocations.
-            ///
-            /// # Panics
-            ///
-            /// Panics if the new allocation size overflows `usize`.
-            #[inline]
-            pub fn reserve(&mut self, additional: usize) {
-                self.$field.reserve(additional)
-            }
-
-            /// Shrinks the capacity of the collection as much as possible. It will drop
-            /// down as much as possible while maintaining the internal rules
-            /// and possibly leaving some space in accordance with the resize policy.
-            #[inline]
-            pub fn shrink_to_fit(&mut self) {
-                self.$field.shrink_to_fit()
-            }
-
-            /// Returns the number of items in the collection.
-            #[inline]
-            pub fn len(&self) -> usize {
-                self.$field.len()
-            }
-
-            /// Returns true if there are no items in the collection.
-            #[inline]
-            pub fn is_empty(&self) -> bool {
-                self.$field.is_empty()
-            }
-
-            /// Removes all items from the collection. Keeps the allocated memory for reuse.
-            #[inline]
-            pub fn clear(&mut self) {
-                self.$field.clear()
-            }
-        }
-
-        impl<A: ?Sized + Any> Default for $t<A> {
-            #[inline]
-            fn default() -> $t<A> {
-                $t::new()
-            }
-        }
-    }
-}
 
 pub mod any;
 pub mod raw;
@@ -131,205 +53,11 @@ pub struct Map<A: ?Sized + Any = dyn Any> {
     raw: RawMap<A>,
 }
 
-// #[derive(Clone)] would want A to implement Clone, but in reality it’s only Box<A> that can.
-impl<A: ?Sized + Any> Clone for Map<A> where Box<A>: Clone {
-    #[inline]
-    fn clone(&self) -> Map<A> {
-        Map {
-            raw: self.raw.clone(),
-        }
-    }
-}
-
-/// The most common type of `Map`: just using `Any`.
-///
-/// Why is this a separate type alias rather than a default value for `Map<A>`? `Map::new()`
-/// doesn’t seem to be happy to infer that it should go with the default value.
-/// It’s a bit sad, really. Ah well, I guess this approach will do.
-pub type AnyMap = Map<dyn Any>;
-
-impl_common_methods! {
-    field: Map.raw;
-    new() => RawMap::new();
-    with_capacity(capacity) => RawMap::with_capacity(capacity);
-}
-
-impl<A: ?Sized + Any> Map<A> {
-    /// Returns a reference to the value stored in the collection for the type `T`, if it exists.
-    #[inline]
-    pub fn get<T: IntoBox<A>>(&self) -> Option<&T> {
-        self.raw.get(&TypeId::of::<T>())
-            .map(|any| unsafe { lateral_ref_unchecked::<_, T>(any) })
-    }
-
-    /// Returns a mutable reference to the value stored in the collection for the type `T`,
-    /// if it exists.
-    #[inline]
-    pub fn get_mut<T: IntoBox<A>>(&mut self) -> Option<&mut T> {
-        self.raw.get_mut(&TypeId::of::<T>())
-            .map(|any| unsafe { lateral_mut_unchecked::<_, T>(any) })
-    }
-
-    /// Sets the value stored in the collection for the type `T`.
-    /// If the collection already had a value of type `T`, that value is returned.
-    /// Otherwise, `None` is returned.
-    #[inline]
-    pub fn insert<T: IntoBox<A>>(&mut self, value: T) -> Option<T> {
-        let key = TypeId::of::<T>();
-        let boxed_value = value.into_box();
-        unsafe { self.raw.insert(key, boxed_value) }
-            .map(|any| *unsafe { lateral_boxcast_unchecked::<_, T>(any) })
-    }
-
-    /// Removes the `T` value from the collection,
-    /// returning it if there was one or `None` if there was not.
-    #[inline]
-    pub fn remove<T: IntoBox<A>>(&mut self) -> Option<T> {
-        self.raw.remove(&TypeId::of::<T>())
-            .map(|any| *unsafe { lateral_boxcast_unchecked::<_, T>(any) })
-    }
-
-    /// Returns true if the collection contains a value of type `T`.
-    #[inline]
-    pub fn contains<T: IntoBox<A>>(&self) -> bool {
-        self.raw.contains_key(&TypeId::of::<T>())
-    }
-
-    /// Gets the entry for the given type in the collection for in-place manipulation
-    #[inline]
-    pub fn entry<T: IntoBox<A>>(&mut self) -> Entry<A, T> {
-        match self.raw.entry(TypeId::of::<T>()) {
-            raw::Entry::Occupied(e) => Entry::Occupied(OccupiedEntry {
-                inner: e,
-                type_: PhantomData,
-            }),
-            raw::Entry::Vacant(e) => Entry::Vacant(VacantEntry {
-                inner: e,
-                type_: PhantomData,
-            }),
-        }
-    }
-}
-
-impl<A: ?Sized + Any> AsRef<RawMap<A>> for Map<A> {
-    #[inline]
-    fn as_ref(&self) -> &RawMap<A> {
-        &self.raw
-    }
-}
-
-impl<A: ?Sized + Any> AsMut<RawMap<A>> for Map<A> {
-    #[inline]
-    fn as_mut(&mut self) -> &mut RawMap<A> {
-        &mut self.raw
-    }
-}
-
-impl<A: ?Sized + Any> Into<RawMap<A>> for Map<A> {
-    #[inline]
-    fn into(self) -> RawMap<A> {
-        self.raw
-    }
-}
-
-/// A view into a single occupied location in an `Map`.
-pub struct OccupiedEntry<'a, A: ?Sized + Any, V: 'a> {
-    inner: raw::OccupiedEntry<'a, A>,
-    type_: PhantomData<V>,
-}
-
-/// A view into a single empty location in an `Map`.
-pub struct VacantEntry<'a, A: ?Sized + Any, V: 'a> {
-    inner: raw::VacantEntry<'a, A>,
-    type_: PhantomData<V>,
-}
-
-/// A view into a single location in an `Map`, which may be vacant or occupied.
-pub enum Entry<'a, A: ?Sized + Any, V: 'a> {
-    /// An occupied Entry
-    Occupied(OccupiedEntry<'a, A, V>),
-    /// A vacant Entry
-    Vacant(VacantEntry<'a, A, V>),
-}
-
-impl<'a, A: ?Sized + Any, V: IntoBox<A>> Entry<'a, A, V> {
-    /// Ensures a value is in the entry by inserting the default if empty, and returns
-    /// a mutable reference to the value in the entry.
-    #[inline]
-    pub fn or_insert(self, default: V) -> &'a mut V {
-        match self {
-            Entry::Occupied(inner) => inner.into_mut(),
-            Entry::Vacant(inner) => inner.insert(default),
-        }
-    }
-
-    /// Ensures a value is in the entry by inserting the result of the default function if empty,
-    /// and returns a mutable reference to the value in the entry.
-    #[inline]
-    pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
-        match self {
-            Entry::Occupied(inner) => inner.into_mut(),
-            Entry::Vacant(inner) => inner.insert(default()),
-        }
-    }
-}
-
-impl<'a, A: ?Sized + Any, V: IntoBox<A>> OccupiedEntry<'a, A, V> {
-    /// Gets a reference to the value in the entry
-    #[inline]
-    pub fn get(&self) -> &V {
-        unsafe { lateral_ref_unchecked::<_, V>(self.inner.get()) }
-    }
-
-    /// Gets a mutable reference to the value in the entry
-    #[inline]
-    pub fn get_mut(&mut self) -> &mut V {
-        unsafe { lateral_mut_unchecked::<_, V>(self.inner.get_mut()) }
-    }
-
-    /// Converts the OccupiedEntry into a mutable reference to the value in the entry
-    /// with a lifetime bound to the collection itself
-    #[inline]
-    pub fn into_mut(self) -> &'a mut V {
-        unsafe { lateral_mut_unchecked::<_, V>(self.inner.into_mut()) }
-    }
-
-    /// Sets the value of the entry, and returns the entry's old value
-    #[inline]
-    pub fn insert(&mut self, value: V) -> V {
-        let value_boxed = value.into_box();
-        *unsafe { lateral_boxcast_unchecked::<_, V>(self.inner.insert(value_boxed)) }
-    }
-
-    /// Takes the value out of the entry, and returns it
-    #[inline]
-    pub fn remove(self) -> V {
-        let old = self.inner.remove();
-        *unsafe { lateral_boxcast_unchecked(old) }
-    }
-}
-
-impl<'a, A: ?Sized + Any, V: IntoBox<A>> VacantEntry<'a, A, V> {
-    /// Sets the value of the entry with the VacantEntry's key,
-    /// and returns a mutable reference to it
-    #[inline]
-    pub fn insert(self, value: V) -> &'a mut V {
-        unsafe { lateral_mut_unchecked::<_, V>(self.inner.insert(value.into_box())) }
-    }
-}
 
 #[cfg(test)]
 mod tests {
     use crate::{Map, AnyMap, Entry};
     use crate::any::{Any, CloneAny};
-
-    #[derive(Clone, Debug, PartialEq)] struct A(i32);
-    #[derive(Clone, Debug, PartialEq)] struct B(i32);
-    #[derive(Clone, Debug, PartialEq)] struct C(i32);
-    #[derive(Clone, Debug, PartialEq)] struct D(i32);
-    #[derive(Clone, Debug, PartialEq)] struct E(i32);
-    #[derive(Clone, Debug, PartialEq)] struct F(i32);
-    #[derive(Clone, Debug, PartialEq)] struct J(i32);
 
     macro_rules! test_entry {
         ($name:ident, $init:ty) => {
@@ -406,37 +134,7 @@ mod tests {
     test_entry!(test_entry_cloneany, Map<dyn CloneAny>);
 
     #[test]
-    fn test_default() {
-        let map: AnyMap = Default::default();
-        assert_eq!(map.len(), 0);
-    }
-
-    #[test]
-    fn test_clone() {
-        let mut map: Map<dyn CloneAny> = Map::new();
-        let _ = map.insert(A(1));
-        let _ = map.insert(B(2));
-        let _ = map.insert(D(3));
-        let _ = map.insert(E(4));
-        let _ = map.insert(F(5));
-        let _ = map.insert(J(6));
-        let map2 = map.clone();
-        assert_eq!(map2.len(), 6);
-        assert_eq!(map2.get::<A>(), Some(&A(1)));
-        assert_eq!(map2.get::<B>(), Some(&B(2)));
-        assert_eq!(map2.get::<C>(), None);
-        assert_eq!(map2.get::<D>(), Some(&D(3)));
-        assert_eq!(map2.get::<E>(), Some(&E(4)));
-        assert_eq!(map2.get::<F>(), Some(&F(5)));
-        assert_eq!(map2.get::<J>(), Some(&J(6)));
-    }
-
-    #[test]
     fn test_varieties() {
-        fn assert_send<T: Send>() { }
-        fn assert_sync<T: Sync>() { }
-        fn assert_clone<T: Clone>() { }
-        fn assert_debug<T: ::std::fmt::Debug>() { }
 
         assert_send::<Map<dyn Any + Send>>();
         assert_send::<Map<dyn Any + Send + Sync>>();
