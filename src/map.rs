@@ -61,6 +61,9 @@ pub unsafe trait CreateEntry<A: ?Sized, E: ?Sized + EntryFamily<A>> {
 /// internal trait
 pub trait CloneableHashableAny<H: Hasher>: HashableAny<H> + DynClone {}
 impl<H: Hasher, T> CloneableHashableAny<H> for T where T: HashableAny<H> + DynClone {}
+/// internal trait
+pub trait PartialEqHashableAny<H: Hasher>: HashableAny<H> + DynPartialEq {}
+impl<H: Hasher, T> PartialEqHashableAny<H> for T where T: HashableAny<H> + DynPartialEq {}
 
 /// Glue trait of entries that be stored in a hashmap-based type-dependent map.
 pub trait HashEntry {
@@ -73,6 +76,33 @@ pub trait HashEntry {
     /// Split the mutable entry into key + mutable value
     fn split_mut(&mut self) -> (&Self::Key, &mut Self::Value);
 }
+
+/// [`PartialEq`] for comparing trait objects
+pub trait DynPartialEq {
+    /// Unsafe comparison: `other` is assumed to have same TypeId as Self.
+    unsafe fn eq_dyn_unsafe(&self, other: &dyn Any) -> bool;
+    /// Compare equality against a trait object implementing Any.
+    fn eq_dyn(&self, other: &dyn Any) -> bool;
+    /// Compare inequality against a trait object implementing Any.
+    fn ne_dyn(&self, other: &dyn Any) -> bool {
+        !self.eq_dyn(other)
+    }
+}
+impl<T: 'static + PartialEq<Self>> DynPartialEq for T {
+    unsafe fn eq_dyn_unsafe(&self, rhs: &dyn Any) -> bool {
+        Some(self) == rhs.downcast_ref::<Self>()
+    }
+    fn eq_dyn(&self, rhs: &dyn Any) -> bool {
+        if rhs.is::<Self>() {
+            unsafe { self.eq_dyn_unsafe(rhs) }
+        } else {
+            false
+        }
+    }
+}
+/// [`Eq`] for comparing trait objects
+pub trait DynEq: DynPartialEq {}
+impl<T: 'static + Eq> DynEq for T {}
 
 /// Formal family of the entry types in the map. If `E` is such a family, the [`AnyMap`] maps,
 /// at least intuitively, a pair of a type and an associated key to the associated value:
@@ -121,14 +151,15 @@ impl<A: ?Sized, E: ?Sized + EntryFamily<A>> InnerEntry<E, A> {
 }
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> PartialEq for InnerEntry<E, A>
-    where EntryAt<E, A>: PartialEq {
+where
+    EntryAt<E, A>: PartialEq,
+{
     fn eq(&self, rhs: &Self) -> bool {
         self.entry == rhs.entry
     }
 }
 
-impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Eq for InnerEntry<E, A>
-    where EntryAt<E, A>: Eq {}
+impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Eq for InnerEntry<E, A> where EntryAt<E, A>: Eq {}
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Hash for InnerEntry<E, A> {
     fn hash<H: Hasher>(&self, h: &mut H) {
@@ -175,7 +206,7 @@ where
 macro_rules! create_entry_impl {
     ($hashable_name:path$( where $bounded_type:ty: $bound:tt$( + $other_bounds:tt)*,)?) => {
         #[cfg(not(feature = "unstable_features"))]
-        unsafe impl<H: 'static + Hasher, A: 'static + ?Sized, E: 'static + ?Sized + EntryFamily<A>>
+        unsafe impl<H: Hasher, A: 'static + ?Sized, E: 'static + ?Sized + EntryFamily<A>>
             CreateEntry<A, E> for dyn $hashable_name
         where $($bounded_type: $bound $(+ $other_bounds)*)?
         {
@@ -193,7 +224,7 @@ create_entry_impl!(HashableAny<H>);
 create_entry_impl!(CloneableHashableAny<H> where EntryAt<E, A>: Clone,);
 
 // E is a nominal family describing the entries
-impl<E: 'static + ?Sized, H: 'static + Hasher, I: ?Sized + HashableAny<H>> RawEntry<E, H, I> {
+impl<E: 'static + ?Sized, H: Hasher, I: ?Sized + HashableAny<H>> RawEntry<E, H, I> {
     fn downcast<A: 'static + ?Sized>(self) -> Option<InnerEntry<E, A>>
     where
         E: EntryFamily<A>,
@@ -223,9 +254,10 @@ impl<E: 'static + ?Sized, H: 'static + Hasher, I: ?Sized + HashableAny<H>> RawEn
 
 type DynStorage<S> = dyn HashableAny<<S as BuildHasher>::Hasher>;
 type CloneDynStorage<S> = dyn CloneableHashableAny<<S as BuildHasher>::Hasher>;
+type PartialEqDynStorage<S> = dyn PartialEqHashableAny<<S as BuildHasher>::Hasher>;
 
-impl<E: 'static + ?Sized, H: Hasher, I: ?Sized> RawEntry<E, H, I> {
-    fn new<A: 'static + ?Sized>(entry: EntryAt<E, A>) -> Self
+impl<E: ?Sized, H: Hasher, I: ?Sized> RawEntry<E, H, I> {
+    fn new<A: ?Sized>(entry: EntryAt<E, A>) -> Self
     where
         E: EntryFamily<A>,
         I: CreateEntry<A, E>,
@@ -237,6 +269,11 @@ impl<E: 'static + ?Sized, H: Hasher, I: ?Sized> RawEntry<E, H, I> {
     }
 }
 
+/// The default [`BuildHasher`] used in the map, i.e. [`hashbrown::hash_map::DefaultHashBuilder`].
+pub type DefaultHashBuilder = hashbrown::hash_map::DefaultHashBuilder;
+/// The Hasher type corresponding to [`DefaultHashBuilder`]
+pub type DefaultHasher = <DefaultHashBuilder as BuildHasher>::Hasher;
+
 /// A hash map implemented with quadratic probing and SIMD lookup.
 ///
 /// The type of the entry stored in the map depends on the type of key used.
@@ -245,7 +282,7 @@ impl<E: 'static + ?Sized, H: Hasher, I: ?Sized> RawEntry<E, H, I> {
 ///
 pub struct AnyMap<
     E: ?Sized,
-    S: BuildHasher = hashbrown::hash_map::DefaultHashBuilder,
+    S: BuildHasher = DefaultHashBuilder,
     I: ?Sized + HashableAny<S::Hasher> = DynStorage<S>,
 > {
     hash_state: S,
@@ -253,8 +290,11 @@ pub struct AnyMap<
 }
 
 /// Type-alias for an [`AnyMap`] that can be cloned.
-pub type CloneableAnyMap<E, S = hashbrown::hash_map::DefaultHashBuilder> =
+pub type CloneableAnyMap<E, S = DefaultHashBuilder> =
     AnyMap<E, S, CloneDynStorage<S>>;
+    /// Type-alias for an [`AnyMap`] that can be equality compared.
+pub type ComparableAnyMap<E, S = DefaultHashBuilder> =
+    AnyMap<E, S, PartialEqDynStorage<S>>;
 
 /// An occupied entry in an [`AnyMap`], containing the key that was used during lookup and the
 /// bucket where the entry is placed in the map. Can save on repeated lookups of the same
@@ -276,7 +316,7 @@ impl<
         'a,
         A: 'static + ?Sized,
         E: 'static + ?Sized + EntryFamily<A>,
-        S: 'static + BuildHasher,
+        S: BuildHasher,
         I: ?Sized + HashableAny<S::Hasher>,
     > OccupiedEntry<'a, A, E, S, I>
 {
@@ -368,7 +408,7 @@ impl<
         'a,
         A: 'static + ?Sized,
         E: 'static + ?Sized + EntryFamily<A>,
-        S: 'static + BuildHasher,
+        S: BuildHasher,
         I: ?Sized + HashableAny<S::Hasher>,
     > VacantEntry<'a, A, E, S, I>
 {
@@ -463,11 +503,7 @@ impl<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> AnyMap<E, S,
     }
 }
 
-fn hash_def_entry<
-    E: 'static + ?Sized,
-    S: 'static + BuildHasher,
-    I: ?Sized + HashableAny<S::Hasher>,
->(
+fn hash_def_entry<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>(
     state: &S,
     e: &RawEntry<E, S::Hasher, I>,
 ) -> u64 {
@@ -476,11 +512,12 @@ fn hash_def_entry<
     e.inner.specific_hash(&mut hasher);
     hasher.finish()
 }
+
 fn hash_def_key<
     Q: ?Sized + Hash,
     A: 'static + ?Sized,
     E: 'static + ?Sized + EntryFamily<A>,
-    S: 'static + BuildHasher,
+    S: BuildHasher,
 >(
     state: &S,
     key: &Q,
@@ -491,21 +528,11 @@ fn hash_def_key<
     hasher.finish()
 }
 
-fn make_hasher<
-    E: 'static + ?Sized,
-    S: 'static + BuildHasher,
-    I: ?Sized + HashableAny<S::Hasher>,
->(
-    state: &S,
-) -> impl '_ + Fn(&RawEntry<E, S::Hasher, I>) -> u64 {
-    move |val: &RawEntry<E, S::Hasher, I>| hash_def_entry(state, val)
-}
-
 fn equivalent_key<
     A: 'static + ?Sized,
     E: 'static + ?Sized,
     Q: ?Sized + Eq,
-    H: 'static + Hasher,
+    H: Hasher,
     I: ?Sized + HashableAny<H>,
 >(
     key: &Q,
@@ -520,7 +547,20 @@ where
     }
 }
 
-impl<E: 'static + ?Sized, S: 'static + BuildHasher, I: ?Sized + HashableAny<S::Hasher>>
+// Deep equivalence comparison, not simply comparing the key
+fn equivalent_entry<E: 'static + ?Sized, H: Hasher, I: ?Sized + HashableAny<H> + DynPartialEq>(
+    lhs: &RawEntry<E, H, I>
+) -> impl '_ + Fn(&RawEntry<E, H, I>) -> bool {
+    move |rhs| lhs.inner.eq_dyn(rhs.inner.any_ref())
+}
+
+fn make_hasher<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>(
+    state: &S,
+) -> impl '_ + Fn(&RawEntry<E, S::Hasher, I>) -> u64 {
+    move |val: &RawEntry<E, S::Hasher, I>| hash_def_entry(state, val)
+}
+
+impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>
     AnyMap<E, S, I>
 {
     fn hash_key<A: 'static + ?Sized, Q: ?Sized + Hash>(&self, key: &Q) -> u64
@@ -535,7 +575,7 @@ impl<E: 'static + ?Sized, S: 'static + BuildHasher, I: ?Sized + HashableAny<S::H
         KeyAt<E, A>: Borrow<Q>,
         Q: Hash + Eq,
     {
-        let hash = self.hash_key(&key);
+        let hash = self.hash_key::<A, _>(&key);
         let entry = self.raw.get(hash, equivalent_key(key));
         match entry {
             Some(e) => match e.downcast_ref() {
@@ -711,6 +751,22 @@ impl<E: 'static + ?Sized, S: 'static + BuildHasher, I: ?Sized + HashableAny<S::H
         }
     }
     */
+    fn iter(&self) -> impl '_ + Iterator<Item = &'_ RawEntry<E, S::Hasher, I>> {
+        // Unsafety: lifetime is captured, so map must outlive it
+        let it = unsafe { self.raw.iter() };
+        it.map(|b| {
+            // Unsafety: borrow is active, so Bucket outlives it
+            unsafe { b.as_ref() }
+        })
+    }
+    fn _iter_mut(&mut self) -> impl '_ + Iterator<Item = &'_ mut RawEntry<E, S::Hasher, I>> {
+        // Unsafety: lifetime is captured, so map must outlive it
+        let it = unsafe { self.raw.iter() };
+        it.map(|b| {
+            // Unsafety: borrow is active, so Bucket outlives it
+            unsafe { b.as_mut() }
+        })
+    }
 }
 
 impl<E: ?Sized, H: Hasher, I: ?Sized + DynClone> Clone for RawEntry<E, H, I> {
@@ -740,3 +796,30 @@ impl<E: ?Sized, S: Default + BuildHasher, I: ?Sized + HashableAny<S::Hasher>> De
         Self::new()
     }
 }
+
+impl<
+        E: 'static + ?Sized,
+        S: Default + BuildHasher,
+        I: ?Sized + HashableAny<S::Hasher> + DynPartialEq,
+    > PartialEq for AnyMap<E, S, I>
+{
+    fn eq(&self, rhs: &Self) -> bool {
+        if self.len() != rhs.len() {
+            return false;
+        }
+
+        // TODO: should this care about the different hash states? Probably not
+        self.iter().all(|entry| {
+            let rhash = hash_def_entry(&rhs.hash_state, entry);
+            matches!(rhs.raw.get(rhash, equivalent_entry(entry)), Some(_))
+            // rhs.get_inner(key: &Q)
+        })
+    }
+}
+
+impl<
+        E: 'static + ?Sized,
+        S: Default + BuildHasher,
+        I: ?Sized + HashableAny<S::Hasher> + DynEq,
+    > Eq for AnyMap<E, S, I>
+{}

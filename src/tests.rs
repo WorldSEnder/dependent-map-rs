@@ -110,7 +110,20 @@ fn test_clone() {
     assert_eq!(map2.get_default::<F>().expect("").some, F(5));
     assert_eq!(map2.get_default::<J>().expect("").some, J(6));
 }
-
+#[test]
+fn test_compare() {
+    let mut map: ComparableAnyMap<Singleton> = Default::default();
+    let mut map2: ComparableAnyMap<Singleton> = Default::default();
+    let _ = map.insert(A(1));
+    let _ = map.insert(B(2));
+    let _ = map.insert(D(3));
+    let _ = map2.insert(A(10));
+    let _ = map2.insert(B(2));
+    let _ = map2.insert(D(3));
+    // NOT using assert_eq since no Debug impl here
+    assert!(map == map); // test reflexivity
+    assert!(map != map2); // test inequality
+}
 
 #[test]
 fn test_varieties() {
@@ -118,8 +131,8 @@ fn test_varieties() {
     fn assert_sync<T: Sync>() { }
     fn assert_clone<T: Clone>() { }
 
-    type AnyMapSend = AnyMap<Singleton, hashbrown::hash_map::DefaultHashBuilder, dyn HashableAny<<hashbrown::hash_map::DefaultHashBuilder as std::hash::BuildHasher>::Hasher> + Send>;
-    type AnyMapSync = AnyMap<Singleton, hashbrown::hash_map::DefaultHashBuilder, dyn HashableAny<<hashbrown::hash_map::DefaultHashBuilder as std::hash::BuildHasher>::Hasher> + Sync>;
+    type AnyMapSend = AnyMap<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Send>;
+    type AnyMapSync = AnyMap<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Sync>;
 
     assert_send::<AnyMapSend>();
     let mut map: AnyMapSend = Default::default();
