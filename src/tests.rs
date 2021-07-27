@@ -1,5 +1,5 @@
 use crate::*;
-// use crate::{AnyMap, CloneableAnyMap, Entry};
+use crate::families::*;
 
 #[derive(Clone, Debug, PartialEq)] struct A(i32);
 #[derive(Clone, Debug, PartialEq)] struct B(i32);
@@ -9,35 +9,9 @@ use crate::*;
 #[derive(Clone, Debug, PartialEq)] struct F(i32);
 #[derive(Clone, Debug, PartialEq)] struct J(i32);
 
-struct Singleton;
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialOrd, Ord, PartialEq, Eq)]
-pub struct Some<A> { pub some: A }
-impl<A> HashEntry for Some<A> {
-    type Key = ();
-    type Value = A;
-    #[inline]
-    fn split_ref(&self) -> (&(), &A) {
-        (&(), &self.some)
-    }
-    #[inline]
-    fn split_mut(&mut self) -> (&(), &mut A) {
-        (&(), &mut self.some)
-    }
-}
-impl<A> From<A> for Some<A> {
-    #[inline]
-    fn from(some: A) -> Self {
-        Some { some }
-    }
-}
-impl<A> EntryFamily<A> for Singleton {
-    type Result = Some<A>;
-}
-
 #[test]
 fn test_some() {
-    let mut map = AnyMap::<Singleton>::new();
+    let mut map = Map::<Singleton>::new();
     let _ = map.insert(42u32);
     let _ = map.insert(3.14159f32);
 
@@ -75,7 +49,7 @@ impl<A> From<(u32, A)> for Multiple<A> {
 
 #[test]
 fn test_multiple() {
-    let mut map = AnyMap::<MultiValued>::new();
+    let mut map = Map::<MultiValued>::new();
     let _ = map.insert((0, 42u32));
     let _ = map.insert((1, 1337u32));
 
@@ -87,13 +61,13 @@ fn test_multiple() {
 
 #[test]
 fn test_default() {
-    let map: AnyMap<Singleton> = Default::default();
+    let map: Map<Singleton> = Default::default();
     assert_eq!(map.len(), 0);
 }
 
 #[test]
 fn test_clone() {
-    let mut map: CloneableAnyMap<Singleton> = Default::default();
+    let mut map: CloneableMap<Singleton> = Default::default();
     let _ = map.insert(A(1));
     let _ = map.insert(B(2));
     let _ = map.insert(D(3));
@@ -112,8 +86,8 @@ fn test_clone() {
 }
 #[test]
 fn test_compare() {
-    let mut map: ComparableAnyMap<Singleton> = Default::default();
-    let mut map2: ComparableAnyMap<Singleton> = Default::default();
+    let mut map: ComparableMap<Singleton> = Default::default();
+    let mut map2: ComparableMap<Singleton> = Default::default();
     let _ = map.insert(A(1));
     let _ = map.insert(B(2));
     let _ = map.insert(D(3));
@@ -131,14 +105,14 @@ fn test_varieties() {
     fn assert_sync<T: Sync>() { }
     fn assert_clone<T: Clone>() { }
 
-    type AnyMapSend = AnyMap<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Send>;
-    type AnyMapSync = AnyMap<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Sync>;
+    type MapSend = Map<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Send>;
+    type MapSync = Map<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Sync>;
 
-    assert_send::<AnyMapSend>();
-    let mut map: AnyMapSend = Default::default();
+    assert_send::<MapSend>();
+    let mut map: MapSend = Default::default();
     let _ = map.insert(A(1));
-    assert_sync::<AnyMapSync>();
-    let mut map: AnyMapSync = Default::default();
+    assert_sync::<MapSync>();
+    let mut map: MapSync = Default::default();
     let _ = map.insert(A(1));
-    assert_clone::<CloneableAnyMap<Singleton>>();
+    assert_clone::<CloneableMap<Singleton>>();
 }

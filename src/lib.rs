@@ -1,4 +1,4 @@
-//! This crate provides the [`AnyMap`] type, a safe and convenient store for one value of each type.
+//! This crate provides the [`Map`] type, a safe and convenient store for one value of each type.
 #![cfg_attr(feature = "unstable_features", feature(unsize, coerce_unsized))]
 #![warn(missing_docs, unused_results)]
 
@@ -6,6 +6,8 @@ mod map;
 pub use map::*;
 #[cfg(test)]
 mod tests;
+/// Structures implementing [`EntryFamily`]
+pub mod families;
 
 /*
 use std::any::TypeId;
@@ -21,14 +23,14 @@ pub mod raw;
 /// type-safe access to those values.
 ///
 /// The type parameter `A` allows you to use a different value type; normally you will want it to
-/// be `anymap::any::Any`, but there are other choices:
+/// be `Map::any::Any`, but there are other choices:
 ///
 /// - If you want the entire map to be cloneable, use `CloneAny` instead of `Any`.
 /// - You can add on `+ Send` and/or `+ Sync` (e.g. `Map<Any + Send>`) to add those bounds.
 ///
 /// ```rust
-/// # use anymap::AnyMap;
-/// let mut data = AnyMap::new();
+/// # use Map::Map;
+/// let mut data = Map::new();
 /// assert_eq!(data.get(), None::<&i32>);
 /// data.insert(42i32);
 /// assert_eq!(data.get(), Some(&42i32));
@@ -56,7 +58,7 @@ pub struct Map<A: ?Sized + Any = dyn Any> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Map, AnyMap, Entry};
+    use crate::{Map, Map, Entry};
     use crate::any::{Any, CloneAny};
 
     macro_rules! test_entry {
@@ -130,7 +132,7 @@ mod tests {
         }
     }
 
-    test_entry!(test_entry_any, AnyMap);
+    test_entry!(test_entry_any, Map);
     test_entry!(test_entry_cloneany, Map<dyn CloneAny>);
 
     #[test]

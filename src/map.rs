@@ -50,10 +50,10 @@ impl<T: Any + Hash, H: Hasher> HashableAny<H> for T {
 }
 
 /// Mostly internal trait, that should be implemented by the internal boxed up storage,
-/// i.e. the `I` argument given to [`AnyMap`].
+/// i.e. the `I` argument given to [`Map`].
 ///
 /// When `unstable_features` are enabled, this is implemented for a large range of traits,
-/// otherwise only a select few arguments can be given to [`AnyMap`].
+/// otherwise only a select few arguments can be given to [`Map`].
 pub unsafe trait CreateEntry<A: ?Sized, E: ?Sized + EntryFamily<A>> {
     /// Create a boxed up internal storage from an entry
     fn from_entry(e: EntryAt<E, A>) -> Box<Self>;
@@ -106,7 +106,7 @@ impl<T: 'static + PartialEq<Self>> DynPartialEq for T {
 pub trait DynEq: DynPartialEq {}
 impl<T: 'static + Eq> DynEq for T {}
 
-/// Formal family of the entry types in the map. If `E` is such a family, the [`AnyMap`] maps,
+/// Formal family of the entry types in the map. If `E` is such a family, the [`Map`] maps,
 /// at least intuitively, a pair of a type and an associated key to the associated value:
 /// `(A: ?Sized, key: KeyAt<E, A>) -> value: ValueAt<E, A>`
 pub trait EntryFamily<A: ?Sized> {
@@ -282,7 +282,7 @@ pub type DefaultHasher = <DefaultHashBuilder as BuildHasher>::Hasher;
 /// For this to work, `E` - the entry family - should implement [`EntryFamily`] for each type of
 /// argument you want to store in the map.
 ///
-pub struct AnyMap<
+pub struct Map<
     E: ?Sized,
     S: BuildHasher = DefaultHashBuilder,
     I: ?Sized + HashableAny<S::Hasher> = DynStorage<S>,
@@ -291,14 +291,14 @@ pub struct AnyMap<
     raw: RawTable<RawEntry<E, S::Hasher, I>>,
 }
 
-/// Type-alias for an [`AnyMap`] that can be cloned.
-pub type CloneableAnyMap<E, S = DefaultHashBuilder> =
-    AnyMap<E, S, CloneDynStorage<S>>;
-    /// Type-alias for an [`AnyMap`] that can be equality compared.
-pub type ComparableAnyMap<E, S = DefaultHashBuilder> =
-    AnyMap<E, S, PartialEqDynStorage<S>>;
+/// Type-alias for an [`Map`] that can be cloned.
+pub type CloneableMap<E, S = DefaultHashBuilder> =
+    Map<E, S, CloneDynStorage<S>>;
+    /// Type-alias for an [`Map`] that can be equality compared.
+pub type ComparableMap<E, S = DefaultHashBuilder> =
+    Map<E, S, PartialEqDynStorage<S>>;
 
-/// An occupied entry in an [`AnyMap`], containing the key that was used during lookup and the
+/// An occupied entry in an [`Map`], containing the key that was used during lookup and the
 /// bucket where the entry is placed in the map. Can save on repeated lookups of the same
 /// key in some scenarios, but users should usually prefer the direct api of the map.
 pub struct OccupiedEntry<
@@ -311,7 +311,7 @@ pub struct OccupiedEntry<
     _hash: u64,
     key: KeyAt<E, A>,
     elem: Bucket<RawEntry<E, S::Hasher, I>>,
-    table: &'a mut AnyMap<E, S, I>,
+    table: &'a mut Map<E, S, I>,
 }
 
 impl<
@@ -393,7 +393,7 @@ impl<
     }
 }
 
-/// A vacant entry in an [`AnyMap`].
+/// A vacant entry in an [`Map`].
 pub struct VacantEntry<
     'a,
     A: ?Sized,
@@ -403,7 +403,7 @@ pub struct VacantEntry<
 > {
     hash: u64,
     key: KeyAt<E, A>,
-    table: &'a mut AnyMap<E, S, I>,
+    table: &'a mut Map<E, S, I>,
 }
 
 impl<
@@ -452,7 +452,7 @@ impl<
     }
 }
 
-/// An entry in an [`AnyMap`]
+/// An entry in an [`Map`]
 pub enum Entry<
     'a,
     A: ?Sized,
@@ -466,8 +466,8 @@ pub enum Entry<
     Vacant(VacantEntry<'a, A, E, S, I>),
 }
 
-impl<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> AnyMap<E, S, I> {
-    /// Create a new, empty, [`AnyMap`].
+impl<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Map<E, S, I> {
+    /// Create a new, empty, [`Map`].
     pub fn new() -> Self
     where
         S: Default,
@@ -477,7 +477,7 @@ impl<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> AnyMap<E, S,
             hash_state: S::default(),
         }
     }
-    /// Create a new, empty, [`AnyMap`] with a specified initial capacity.
+    /// Create a new, empty, [`Map`] with a specified initial capacity.
     pub fn with_capacity(capacity: usize) -> Self
     where
         S: Default,
@@ -563,7 +563,7 @@ fn make_hasher<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>(
 }
 
 impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>
-    AnyMap<E, S, I>
+    Map<E, S, I>
 {
     fn hash_key<A: 'static + ?Sized, Q: ?Sized + Hash>(&self, key: &Q) -> u64
     where
@@ -781,7 +781,7 @@ impl<E: ?Sized, H: Hasher, I: ?Sized + DynClone> Clone for RawEntry<E, H, I> {
 }
 
 impl<E: ?Sized, S: BuildHasher + Clone, I: ?Sized + HashableAny<S::Hasher> + DynClone> Clone
-    for AnyMap<E, S, I>
+    for Map<E, S, I>
 {
     fn clone(&self) -> Self {
         Self {
@@ -792,7 +792,7 @@ impl<E: ?Sized, S: BuildHasher + Clone, I: ?Sized + HashableAny<S::Hasher> + Dyn
 }
 
 impl<E: ?Sized, S: Default + BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Default
-    for AnyMap<E, S, I>
+    for Map<E, S, I>
 {
     fn default() -> Self {
         Self::new()
@@ -803,7 +803,7 @@ impl<
         E: 'static + ?Sized,
         S: Default + BuildHasher,
         I: ?Sized + HashableAny<S::Hasher> + DynPartialEq,
-    > PartialEq for AnyMap<E, S, I>
+    > PartialEq for Map<E, S, I>
 {
     fn eq(&self, rhs: &Self) -> bool {
         if self.len() != rhs.len() {
@@ -823,5 +823,5 @@ impl<
         E: 'static + ?Sized,
         S: Default + BuildHasher,
         I: ?Sized + HashableAny<S::Hasher> + DynEq,
-    > Eq for AnyMap<E, S, I>
+    > Eq for Map<E, S, I>
 {}
