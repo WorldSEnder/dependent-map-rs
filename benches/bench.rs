@@ -4,7 +4,7 @@ extern crate dependent_map;
 
 extern crate test;
 
-use dependent_map::AnyMap;
+use dependent_map::{Map, families::Singleton};
 
 use test::Bencher;
 use test::black_box;
@@ -12,7 +12,7 @@ use test::black_box;
 #[bench]
 fn insertion(b: &mut Bencher) {
     b.iter(|| {
-        let mut data = AnyMap::new();
+        let mut data = Map::<Singleton>::new();
         for _ in 0..100 {
             let _ = data.insert(42);
         }
@@ -22,9 +22,9 @@ fn insertion(b: &mut Bencher) {
 #[bench]
 fn get_missing(b: &mut Bencher) {
     b.iter(|| {
-        let data = AnyMap::new();
+        let data = Map::<Singleton>::new();
         for _ in 0..100 {
-            assert_eq!(data.get(), None::<&i32>);
+            assert_eq!(data.get_default::<i32>(), None);
         }
     })
 }
@@ -32,11 +32,11 @@ fn get_missing(b: &mut Bencher) {
 #[bench]
 fn get_present(b: &mut Bencher) {
     b.iter(|| {
-        let mut data = AnyMap::new();
+        let mut data = Map::<Singleton>::new();
         let _ = data.insert(42);
         // These inner loops are a feeble attempt to drown the other factors.
         for _ in 0..100 {
-            assert_eq!(data.get(), Some(&42));
+            assert_eq!(**data.get_default::<i32>().expect(""), 42);
         }
     })
 }
@@ -50,12 +50,12 @@ macro_rules! big_benchmarks {
             )*
 
             b.iter(|| {
-                let mut data = AnyMap::new();
+                let mut data = Map::<Singleton>::new();
                 $(
                     let _ = black_box(data.insert($T(stringify!($T))));
                 )*
                 $(
-                    let _ = black_box(data.get::<$T>());
+                    let _ = black_box(data.get_default::<$T>());
                 )*
             })
         }
