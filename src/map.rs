@@ -1,7 +1,5 @@
 use core::hash::BuildHasher;
-use dyn_clone::DynClone;
-use hashbrown::raw::Bucket;
-use hashbrown::raw::RawTable;
+use hashbrown::raw::{Bucket, RawTable};
 use std::any::Any;
 use std::any::TypeId;
 use std::borrow::Borrow;
@@ -9,6 +7,8 @@ use std::hash::Hash;
 use std::hash::Hasher;
 use std::ops::Deref;
 use std::ops::DerefMut;
+
+pub use dyn_clone::DynClone;
 
 #[inline(always)]
 fn unreachable_internal_invariant<T>(_reason: &'static str) -> T {
@@ -51,7 +51,7 @@ impl<T: Any + Hash, H: Hasher> HashableAny<H> for T {
 
 /// Mostly internal trait, that should be implemented by the internal boxed up storage,
 /// i.e. the `I` argument given to [`AnyMap`].
-/// 
+///
 /// When `unstable_features` are enabled, this is implemented for a large range of traits,
 /// otherwise only a select few arguments can be given to [`AnyMap`].
 pub unsafe trait CreateEntry<A: ?Sized, E: ?Sized + EntryFamily<A>> {
@@ -120,12 +120,15 @@ impl<A: ?Sized, E: ?Sized + EntryFamily<A>> InnerEntry<E, A> {
     }
 }
 
-impl<A: ?Sized, E: ?Sized + EntryFamily<A>> PartialEq for InnerEntry<E, A> {
+impl<A: ?Sized, E: ?Sized + EntryFamily<A>> PartialEq for InnerEntry<E, A>
+    where EntryAt<E, A>: PartialEq {
     fn eq(&self, rhs: &Self) -> bool {
-        self.key() == rhs.key()
+        self.entry == rhs.entry
     }
 }
-impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Eq for InnerEntry<E, A> {}
+
+impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Eq for InnerEntry<E, A>
+    where EntryAt<E, A>: Eq {}
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> Hash for InnerEntry<E, A> {
     fn hash<H: Hasher>(&self, h: &mut H) {
@@ -152,7 +155,8 @@ struct RawEntry<E: ?Sized, H: Hasher, I: ?Sized> {
 }
 
 #[cfg(feature = "unstable_features")]
-unsafe impl<A: 'static + ?Sized, E: 'static + ?Sized + EntryFamily<A>, I: ?Sized> CreateEntry<A, E> for I
+unsafe impl<A: 'static + ?Sized, E: 'static + ?Sized + EntryFamily<A>, I: ?Sized> CreateEntry<A, E>
+    for I
 where
     InnerEntry<E, A>: std::marker::Unsize<I>,
 {
@@ -235,7 +239,7 @@ impl<E: 'static + ?Sized, H: Hasher, I: ?Sized> RawEntry<E, H, I> {
 
 /// A hash map implemented with quadratic probing and SIMD lookup.
 ///
-/// They type of the entry stored in the map depends on the type of key used.
+/// The type of the entry stored in the map depends on the type of key used.
 /// For this to work, `E` - the entry family - should implement [`EntryFamily`] for each type of
 /// argument you want to store in the map.
 ///
@@ -252,7 +256,7 @@ pub struct AnyMap<
 pub type CloneableAnyMap<E, S = hashbrown::hash_map::DefaultHashBuilder> =
     AnyMap<E, S, CloneDynStorage<S>>;
 
-/// An occupied entry in an `AnyMap`, containing the key that was used during lookup and the
+/// An occupied entry in an [`AnyMap`], containing the key that was used during lookup and the
 /// bucket where the entry is placed in the map. Can save on repeated lookups of the same
 /// key in some scenarios, but users should usually prefer the direct api of the map.
 pub struct OccupiedEntry<
@@ -655,7 +659,6 @@ impl<E: 'static + ?Sized, S: 'static + BuildHasher, I: ?Sized + HashableAny<S::H
     /// If the map did not have this key present, [`None`] is returned.
     ///
     /// Otherwise, the entry is fully replaced and `Some(old)` where `old` is the old entry is returned.
-    /// Note that this differs from [`Self::insert`] where the key is not updated.
     pub fn insert<A: 'static + ?Sized, P: ?Sized>(&mut self, entry: P) -> Option<EntryAt<E, A>>
     where
         E: EntryFamily<A>,
