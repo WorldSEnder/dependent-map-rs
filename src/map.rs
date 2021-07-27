@@ -238,6 +238,7 @@ macro_rules! create_entry_impl {
 }
 create_entry_impl!(HashableAny<H>);
 create_entry_impl!(CloneableHashableAny<H> where EntryAt<E, A>: Clone,);
+create_entry_impl!(PartialEqHashableAny<H> where EntryAt<E, A>: PartialEq,);
 
 impl<E: ?Sized, I: ?Sized> RawEntry<E, I> {
     #[inline]

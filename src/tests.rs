@@ -16,8 +16,8 @@ fn test_some() {
     let _ = map.insert(3.14159f32);
 
     assert_eq!(map.len(), 2);
-    assert_eq!(map.get_default::<u32>().expect("").some, 42);
-    assert_eq!(map.get_default::<f32>().expect("").some, 3.14159f32);
+    assert_eq!(**map.get_default::<u32>().expect(""), 42);
+    assert_eq!(**map.get_default::<f32>().expect(""), 3.14159f32);
     assert_eq!(map.get_default::<u64>(), None);
 }
 
@@ -76,13 +76,13 @@ fn test_clone() {
     let _ = map.insert(J(6));
     let map2 = map.clone();
     assert_eq!(map2.len(), 6);
-    assert_eq!(map2.get_default::<A>().expect("").some, A(1));
-    assert_eq!(map2.get_default::<B>().expect("").some, B(2));
+    assert_eq!(**map2.get_default::<A>().expect(""), A(1));
+    assert_eq!(**map2.get_default::<B>().expect(""), B(2));
     assert_eq!(map2.get_default::<C>(), None::<&Some<C>>);
-    assert_eq!(map2.get_default::<D>().expect("").some, D(3));
-    assert_eq!(map2.get_default::<E>().expect("").some, E(4));
-    assert_eq!(map2.get_default::<F>().expect("").some, F(5));
-    assert_eq!(map2.get_default::<J>().expect("").some, J(6));
+    assert_eq!(**map2.get_default::<D>().expect(""), D(3));
+    assert_eq!(**map2.get_default::<E>().expect(""), E(4));
+    assert_eq!(**map2.get_default::<F>().expect(""), F(5));
+    assert_eq!(**map2.get_default::<J>().expect(""), J(6));
 }
 #[test]
 fn test_compare() {
@@ -109,10 +109,16 @@ fn test_varieties() {
     type MapSync = Map<Singleton, DefaultHashBuilder, dyn HashableAny<DefaultHasher> + Sync>;
 
     assert_send::<MapSend>();
-    let mut map: MapSend = Default::default();
-    let _ = map.insert(A(1));
+    #[cfg(feature = "unstable_features")]
+    {
+        let mut map: MapSend = Default::default();
+        let _ = map.insert(A(1));
+    }
     assert_sync::<MapSync>();
-    let mut map: MapSync = Default::default();
-    let _ = map.insert(A(1));
+    #[cfg(feature = "unstable_features")]
+    {
+        let mut map: MapSync = Default::default();
+        let _ = map.insert(A(1));
+    }
     assert_clone::<CloneableMap<Singleton>>();
 }

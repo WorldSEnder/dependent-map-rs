@@ -1,7 +1,9 @@
 use crate::{EntryFamily, HashEntry};
+use std::ops::Deref;
+use std::ops::DerefMut;
 
 /// Used as first argument to [`Map`] so that to each type, exactly one value of that type is associated.
-/// 
+///
 /// [`Map`]: crate::Map
 pub struct Singleton;
 impl<A> EntryFamily<A> for Singleton {
@@ -33,5 +35,18 @@ impl<A> From<A> for Some<A> {
     #[inline]
     fn from(some: A) -> Self {
         Some { some }
+    }
+}
+
+impl<A> Deref for Some<A> {
+    type Target = A;
+    fn deref(&self) -> &Self::Target {
+        &self.some
+    }
+}
+
+impl<A> DerefMut for Some<A> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.some
     }
 }
