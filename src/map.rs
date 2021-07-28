@@ -199,6 +199,14 @@ impl<A: ?Sized, E: ?Sized + EntryFamily<A>> DerefMut for InnerEntry<E, A> {
 }
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> InnerEntry<E, A> {
+    /// Create an inner entry from an instance of the entry family.
+    pub fn new(entry: EntryAt<E, A>) -> Self { 
+        Self {
+            entry,
+            _marker: PhantomData,
+        }
+    }
+
     #[inline]
     fn key(&self) -> &KeyAt<E, A> {
         self.split_ref().0
@@ -274,28 +282,59 @@ where
     }
 }
 
-macro_rules! create_entry_impl {
-    ($hashable_name:path $(where $($bounded_type:ty: $bound:tt$( + $other_bounds:tt)*,)*)?) => {
-        #[cfg(not(feature = "unstable_features"))]
-        unsafe impl<H: Hasher, A: 'static + ?Sized, E: 'static + ?Sized + EntryFamily<A>>
-            CreateEntry<A, E> for dyn $hashable_name
-        where $($($bounded_type: $bound $(+ $other_bounds)*,)*)?
-        {
-            #[inline]
-            fn from_entry(entry: EntryAt<E, A>) -> std::boxed::Box<Self> {
-                let inner_entry: InnerEntry<E, A> = InnerEntry {
-                    entry,
-                    _marker: std::marker::PhantomData,
-                };
-                Box::new(inner_entry)
+mod macro_hygiene {
+    /// Generate an implementation of [`CreateEntry`] for some trait object by coercing
+    /// the inner entry into a box containing a `dyn`. For this to work, [`InnerEntry`] has
+    /// to implement the trait.
+    /// 
+    /// The impl is generic in three arguments:
+    /// - `H: Hasher` the hasher used for the map
+    /// - `A: 'static + ?Sized` the argument to the entry family
+    /// - `E: 'static + ?Sized + EntryFamily<A>` the entry family
+    /// 
+    /// # Example usage
+    /// 
+    /// ```rust
+    /// # #[macro_use] extern crate dependent_map;
+    /// # use dependent_map::{HashableAny, DynClone, DynEq, EntryAt};
+    /// # use std::hash::Hasher;
+    /// // Some trait alias we want to use as `Map<E, S, dyn SomeTraitFoo<H>>`
+    /// trait SomeTraitFoo<H: Hasher>: HashableAny<H> + DynClone + DynEq {}
+    /// impl<H: Hasher, T> SomeTraitFoo<H> for T where T: HashableAny<H> + DynClone + DynEq {}
+    /// 
+    /// create_entry_impl!(SomeTraitFoo<H> where EntryAt<E, A>: Clone + Eq,);
+    /// ```
+    /// 
+    /// [`CreateEntry`]: crate::CreateEntry
+    /// [`InnerEntry`]: crate::InnerEntry
+    #[macro_export]
+    #[cfg(not(feature = "unstable_features"))]
+    macro_rules! create_entry_impl {
+        ($hashable_name:path $(where $($bounded_type:ty: $bound:tt$( + $other_bounds:tt)*,)*)?) => {
+            unsafe impl<H: ::std::hash::Hasher, A: 'static + ?Sized, E: 'static + ?Sized + $crate::EntryFamily<A>>
+                $crate::CreateEntry<A, E> for dyn $hashable_name
+            where $($($bounded_type: $bound $(+ $other_bounds)*,)*)?
+            {
+                #[inline]
+                fn from_entry(entry: $crate::EntryAt<E, A>) -> ::std::boxed::Box<Self> {
+                    let inner_entry: $crate::InnerEntry<E, A> = $crate::InnerEntry::new(entry);
+                    ::std::boxed::Box::new(inner_entry)
+                }
             }
-        }
-    };
+        };
+    }
+    /// No-op for compatiblity with code generated with `unstable_features` turned off.
+    #[macro_export]
+    #[cfg(feature = "unstable_features")]
+    macro_rules! create_entry_impl {
+        ($hashable_name:path $(where $($bounded_type:ty: $bound:tt$( + $other_bounds:tt)*,)*)?) => { }
+    }
 }
-create_entry_impl!(HashableAny<H>);
-create_entry_impl!(CloneableHashableAny<H> where EntryAt<E, A>: Clone,);
-create_entry_impl!(PartialEqHashableAny<H> where EntryAt<E, A>: PartialEq,);
-create_entry_impl!(DebugHashableAny<H> where KeyAt<E, A>: Debug, ValueAt<E, A>: Debug,);
+
+crate::create_entry_impl!(HashableAny<H>);
+crate::create_entry_impl!(CloneableHashableAny<H> where EntryAt<E, A>: Clone,);
+crate::create_entry_impl!(PartialEqHashableAny<H> where EntryAt<E, A>: PartialEq,);
+crate::create_entry_impl!(DebugHashableAny<H> where KeyAt<E, A>: Debug, ValueAt<E, A>: Debug,);
 
 impl<E: ?Sized, I: ?Sized> RawEntry<E, I> {
     #[inline]
