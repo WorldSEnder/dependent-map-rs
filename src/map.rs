@@ -189,6 +189,7 @@ impl<A: ?Sized, E: ?Sized + EntryFamily<A>> DerefMut for InnerEntry<E, A> {
 }
 
 impl<A: ?Sized, E: ?Sized + EntryFamily<A>> InnerEntry<E, A> {
+    #[inline]
     /// Create an inner entry from an instance of the entry family.
     pub fn new(entry: EntryAt<E, A>) -> Self { 
         Self {
