@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use crate::*;
 use crate::families::*;
+use crate::variants::*;
 
 #[derive(Clone, Debug, PartialEq)] struct A(i32);
 #[derive(Clone, Debug, PartialEq)] struct B(i32);

@@ -60,34 +60,24 @@ impl<T: Sized + Any + Hash, H: Hasher> HashableAny<H> for T {
     }
 }
 
-/// Mostly internal trait, that should be implemented by the internal boxed up storage,
-/// i.e. the `I` argument given to [`Map`].
+/// Trait used to create internal boxed up storage from entries.
 ///
 /// When `unstable_features` are enabled, this is implemented for a large range of traits,
 /// otherwise only a select few arguments can be given to [`Map`].
+/// 
+/// Refer to [`create_entry_impl`] for the prefered method of writing implementations of this.
+/// 
+/// # Unsafety
+/// 
+/// Implementations promise that the returned Box contains the passed in entry in a fat pointer.
+/// This must only be implemented for trait objects implying [`RefAny`], and when downcasting
+/// the returned Box, the original entry must be returned.
+/// 
+/// [`create_entry_impl`]: crate::create_entry_impl
 pub unsafe trait CreateEntry<A: ?Sized, E: ?Sized + EntryFamily<A>> {
     /// Create a boxed up internal storage from an entry
     fn from_entry(e: EntryAt<E, A>) -> Box<Self>;
 }
-
-/// Glue trait
-/// 
-/// If you get an error mentioned that this is not implemented, make sure you are using
-/// a storage type that captures the Clone interface of entries, such as in [`CloneableMap`].
-pub trait CloneableHashableAny<H: Hasher>: HashableAny<H> + DynClone {}
-impl<H: Hasher, T> CloneableHashableAny<H> for T where T: HashableAny<H> + DynClone {}
-/// Glue trait
-/// 
-/// If you get an error mentioned that this is not implemented, make sure you are using
-/// a storage type that captures the PartialEq interface of entries, such as in [`ComparableMap`].
-pub trait PartialEqHashableAny<H: Hasher>: HashableAny<H> + DynPartialEq {}
-impl<H: Hasher, T> PartialEqHashableAny<H> for T where T: HashableAny<H> + DynPartialEq {}
-/// Glue trait
-/// 
-/// If you get an error mentioned that this is not implemented, make sure you are using
-/// a storage type that captures the Debug interface of entries, such as in [`DebuggableMap`].
-pub trait DebugHashableAny<H: Hasher>: HashableAny<H> + DebugEntry {}
-impl<H: Hasher, T> DebugHashableAny<H> for T where T: HashableAny<H> + DebugEntry {}
 
 /// Trait of entries that be stored in a hashmap-based type-dependent map.
 pub trait HashEntry {
@@ -101,7 +91,7 @@ pub trait HashEntry {
     fn split_mut(&mut self) -> (&Self::Key, &mut Self::Value);
 }
 
-/// [`PartialEq`] for comparing trait objects
+/// Object-safe [`PartialEq`] for comparing trait objects
 pub trait DynPartialEq {
     /// Unsafe comparison: `other` is assumed to have same TypeId as Self.
     unsafe fn eq_dyn_unsafe(&self, other: &dyn Any) -> bool;
@@ -132,7 +122,7 @@ impl<T: 'static + PartialEq<Self>> DynPartialEq for T {
         }
     }
 }
-/// [`Eq`] for comparing trait objects
+/// Object-safe [`Eq`] for comparing trait objects
 pub trait DynEq: DynPartialEq {}
 impl<T: 'static + Eq> DynEq for T {}
 
@@ -299,6 +289,7 @@ mod macro_hygiene {
     /// # use dependent_map::{HashableAny, DynClone, DynEq, EntryAt};
     /// # use std::hash::Hasher;
     /// // Some trait alias we want to use as `Map<E, S, dyn SomeTraitFoo<H>>`
+    /// // In this case, the Map should be cloneable and comparable for equality.
     /// trait SomeTraitFoo<H: Hasher>: HashableAny<H> + DynClone + DynEq {}
     /// impl<H: Hasher, T> SomeTraitFoo<H> for T where T: HashableAny<H> + DynClone + DynEq {}
     /// 
@@ -324,17 +315,29 @@ mod macro_hygiene {
         };
     }
     /// No-op for compatiblity with code generated with `unstable_features` turned off.
+    /// 
+    /// # Example usage
+    /// 
+    /// ```rust
+    /// # #[macro_use] extern crate dependent_map;
+    /// # use dependent_map::{HashableAny, DynClone, DynEq, EntryAt};
+    /// # use std::hash::Hasher;
+    /// // Some trait alias we want to use as `Map<E, S, dyn SomeTraitFoo<H>>`
+    /// // In this case, the Map should be cloneable and comparable for equality.
+    /// trait SomeTraitFoo<H: Hasher>: HashableAny<H> + DynClone + DynEq {}
+    /// impl<H: Hasher, T> SomeTraitFoo<H> for T where T: HashableAny<H> + DynClone + DynEq {}
+    /// 
+    /// create_entry_impl!(SomeTraitFoo<H> where EntryAt<E, A>: Clone + Eq,);
+    /// ```
+    /// 
+    /// [`CreateEntry`]: crate::CreateEntry
+    /// [`InnerEntry`]: crate::InnerEntry
     #[macro_export]
     #[cfg(feature = "unstable_features")]
     macro_rules! create_entry_impl {
         ($hashable_name:path $(where $($bounded_type:ty: $bound:tt$( + $other_bounds:tt)*,)*)?) => { }
     }
 }
-
-crate::create_entry_impl!(HashableAny<H>);
-crate::create_entry_impl!(CloneableHashableAny<H> where EntryAt<E, A>: Clone,);
-crate::create_entry_impl!(PartialEqHashableAny<H> where EntryAt<E, A>: PartialEq,);
-crate::create_entry_impl!(DebugHashableAny<H> where KeyAt<E, A>: Debug, ValueAt<E, A>: Debug,);
 
 impl<E: ?Sized, I: ?Sized> RawEntry<E, I> {
     #[inline]
@@ -402,6 +405,7 @@ pub type DefaultHashBuilder = hashbrown::hash_map::DefaultHashBuilder;
 pub type DefaultHasher = <DefaultHashBuilder as BuildHasher>::Hasher;
 
 type DynStorage<S> = dyn HashableAny<<S as BuildHasher>::Hasher>;
+crate::create_entry_impl!(HashableAny<H>);
 
 /// A hash map implemented with quadratic probing and SIMD lookup.
 ///
@@ -420,29 +424,6 @@ pub struct Map<
     hash_state: S,
     raw: RawTable<RawEntry<E, I>>,
 }
-
-type CloneDynStorage<S> = dyn CloneableHashableAny<<S as BuildHasher>::Hasher>;
-type PartialEqDynStorage<S> = dyn PartialEqHashableAny<<S as BuildHasher>::Hasher>;
-type DebugDynStorage<S> = dyn DebugHashableAny<<S as BuildHasher>::Hasher>;
-
-/// Type-alias for an [`Map`] that can be cloned.
-/// 
-/// Note that this works because the trait object captures [`DynClone`]. If you want to combine
-/// multiple capabilites, such as Clone + Debug, write a combined trait and use that as the
-/// third argument to [`Map`].
-pub type CloneableMap<E, S = DefaultHashBuilder> = Map<E, S, CloneDynStorage<S>>;
-/// Type-alias for an [`Map`] that can be equality compared.
-/// 
-/// Note that this works because the trait object captures [`DynPartialEq`]. If you want to combine
-/// multiple capabilites, such as PartialEq + Debug, write a combined trait and use that as the
-/// third argument to [`Map`].
-pub type ComparableMap<E, S = DefaultHashBuilder> = Map<E, S, PartialEqDynStorage<S>>;
-/// Type-alias for an [`Map`] that implements [`Debug`].
-/// 
-/// Note that this works because the trait object captures [`DebugEntry`]. If you want to combine
-/// multiple capabilites, such as PartialEq + Debug, write a combined trait and use that as the
-/// third argument to [`Map`].
-pub type DebuggableMap<E, S = DefaultHashBuilder> = Map<E, S, DebugDynStorage<S>>;
 
 /// An occupied entry in an [`Map`], containing the key that was used during lookup and the
 /// bucket where the entry is placed in the map. Can save on repeated lookups of the same

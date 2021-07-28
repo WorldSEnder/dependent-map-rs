@@ -2,7 +2,7 @@
 name = "dependent-map"
 version = "0.1.0"
 authors = ["Martin Molzer <worldsbegin@gmx.de>"]
-description = "A safe and convenient store for one value of each type"
+description = "A safe and convenient store for one or multiple values for each type"
 documentation = "https://docs.rs/dependent-map"
 #homepage = "https://github.com/worldsender/dependent-map"
 repository = "https://github.com/worldsender/dependent-map"
