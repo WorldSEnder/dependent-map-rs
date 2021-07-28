@@ -251,6 +251,7 @@ struct RawEntry<E: ?Sized, I: ?Sized> {
     // using the Any interface, otherwise you might unintentionally work on the
     // Box instead of its content.
     inner: Box<I>,
+    hash: u64,
     _marker: NonOwningPhantomPointer<E>,
 }
 
@@ -343,13 +344,14 @@ impl<E: 'static + ?Sized, I: ?Sized + RefAny> RawEntry<E, I> {
 
 impl<E: ?Sized, I: ?Sized> RawEntry<E, I> {
     #[inline]
-    fn new<A: ?Sized>(entry: EntryAt<E, A>) -> Self
+    fn new<A: ?Sized>(hash: u64, entry: EntryAt<E, A>) -> Self
     where
         E: EntryFamily<A>,
         I: CreateEntry<A, E>,
     {
         Self {
             inner: I::from_entry(entry),
+            hash,
             _marker: std::marker::PhantomData,
         }
     }
@@ -373,6 +375,9 @@ pub struct Map<
     S: BuildHasher = DefaultHashBuilder,
     I: ?Sized + HashableAny<S::Hasher> = DynStorage<S>,
 > {
+    // IMPORTANT: we cache the hash in each RawEntry, so the hash_state can not change without
+    // rehashing all items. Dynamic dispatch via HashableAny<S::Hasher> would then be needed,
+    // which is also how PartialEq works.
     hash_state: S,
     raw: RawTable<RawEntry<E, I>>,
 }
@@ -545,7 +550,7 @@ impl<
     where
         I: CreateEntry<A, E>,
     {
-        let raw_entry = RawEntry::new(value(self.key));
+        let raw_entry = RawEntry::new(self.hash, value(self.key));
         let hashfn = make_hasher(&self.table.hash_state);
         let ins_entry = self.table.raw.insert_entry(self.hash, raw_entry, hashfn);
         match ins_entry.downcast_mut() {
@@ -626,13 +631,13 @@ impl<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Map<E, S, I>
 }
 
 #[inline]
-fn hash_def_entry<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>(
+fn hash_def_entry<S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>(
     state: &S,
-    e: &RawEntry<E, I>,
+    e: &I,
 ) -> u64 {
     let mut hasher = state.build_hasher();
-    e.inner().any_ref().type_id().hash(&mut hasher);
-    e.inner().specific_hash(&mut hasher);
+    e.any_ref().type_id().hash(&mut hasher);
+    e.specific_hash(&mut hasher);
     hasher.finish()
 }
 
@@ -676,9 +681,9 @@ fn equivalent_entry<E: 'static + ?Sized, I: ?Sized + RefAny + DynPartialEq>(
 }
 
 fn make_hasher<E: ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>>(
-    state: &S,
+    _state: &S,
 ) -> impl '_ + Fn(&RawEntry<E, I>) -> u64 {
-    move |val: &RawEntry<E, I>| hash_def_entry(state, val)
+    move |val: &RawEntry<E, I>| val.hash
 }
 
 impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Map<E, S, I> {
@@ -841,7 +846,7 @@ impl<E: 'static + ?Sized, S: BuildHasher, I: ?Sized + HashableAny<S::Hasher>> Ma
         if let Some(existing) = self.get_inner_mut_by_hash(hash, key) {
             Some(std::mem::replace(&mut existing.entry, entry))
         } else {
-            let raw_entry = RawEntry::<E, I>::new(entry);
+            let raw_entry = RawEntry::<E, I>::new(hash, entry);
             let hashfn = make_hasher(&self.hash_state);
             let _ = self.raw.insert(hash, raw_entry, hashfn);
             None
@@ -904,6 +909,7 @@ impl<E: ?Sized, I: ?Sized + DynClone> Clone for RawEntry<E, I> {
     fn clone(&self) -> Self {
         Self {
             inner: dyn_clone::clone_box(&self.inner),
+            hash: self.hash,
             _marker: std::marker::PhantomData,
         }
     }
@@ -943,7 +949,7 @@ impl<
 
         // TODO: should this care about the different hash states? Probably not
         self.iter().all(|entry| {
-            let rhash = hash_def_entry(&rhs.hash_state, entry);
+            let rhash = hash_def_entry(&rhs.hash_state, entry.inner());
             matches!(rhs.raw.get(rhash, equivalent_entry(entry)), Some(_))
             // rhs.get_inner(key: &Q)
         })
