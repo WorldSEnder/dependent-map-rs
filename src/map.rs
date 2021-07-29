@@ -274,6 +274,30 @@ where
 }
 
 mod macro_hygiene {
+    macro_rules! doc_string {
+        ($(#[doc = $str:expr])*) => {
+            concat!($($str, "\n",)*)
+        };
+    }
+    macro_rules! example_usage {
+        () => {
+            doc_string!(
+                /// # Example usage
+                /// 
+                /// ```rust
+                /// # #[macro_use] extern crate dependent_map;
+                /// # use dependent_map::{HashableAny, DynClone, DynEq, EntryAt};
+                /// # use std::hash::Hasher;
+                /// // Some trait alias we want to use as `Map<E, S, dyn SomeTraitFoo<H>>`
+                /// // In this case, the Map should be cloneable and comparable for equality.
+                /// trait SomeTraitFoo<H: Hasher>: HashableAny<H> + DynClone + DynEq {}
+                /// impl<H: Hasher, T> SomeTraitFoo<H> for T where T: HashableAny<H> + DynClone + DynEq {}
+                /// 
+                /// create_entry_impl!(SomeTraitFoo<H> where EntryAt<E, A>: Clone + Eq,);
+                /// ```
+            )
+        }
+    }
     /// Generate an implementation of [`CreateEntry`] for some trait object by coercing
     /// the inner entry into a box containing a `dyn`. For this to work, [`InnerEntry`] has
     /// to implement the trait.
@@ -283,22 +307,9 @@ mod macro_hygiene {
     /// - `A: 'static + ?Sized` the argument to the entry family
     /// - `E: 'static + ?Sized + EntryFamily<A>` the entry family
     /// 
-    /// # Example usage
-    /// 
-    /// ```rust
-    /// # #[macro_use] extern crate dependent_map;
-    /// # use dependent_map::{HashableAny, DynClone, DynEq, EntryAt};
-    /// # use std::hash::Hasher;
-    /// // Some trait alias we want to use as `Map<E, S, dyn SomeTraitFoo<H>>`
-    /// // In this case, the Map should be cloneable and comparable for equality.
-    /// trait SomeTraitFoo<H: Hasher>: HashableAny<H> + DynClone + DynEq {}
-    /// impl<H: Hasher, T> SomeTraitFoo<H> for T where T: HashableAny<H> + DynClone + DynEq {}
-    /// 
-    /// create_entry_impl!(SomeTraitFoo<H> where EntryAt<E, A>: Clone + Eq,);
-    /// ```
-    /// 
     /// [`CreateEntry`]: crate::CreateEntry
     /// [`InnerEntry`]: crate::InnerEntry
+    #[doc = example_usage!()]
     #[macro_export]
     #[cfg(not(feature = "unstable_features"))]
     macro_rules! create_entry_impl {
@@ -316,23 +327,7 @@ mod macro_hygiene {
         };
     }
     /// No-op for compatiblity with code generated with `unstable_features` turned off.
-    /// 
-    /// # Example usage
-    /// 
-    /// ```rust
-    /// # #[macro_use] extern crate dependent_map;
-    /// # use dependent_map::{HashableAny, DynClone, DynEq, EntryAt};
-    /// # use std::hash::Hasher;
-    /// // Some trait alias we want to use as `Map<E, S, dyn SomeTraitFoo<H>>`
-    /// // In this case, the Map should be cloneable and comparable for equality.
-    /// trait SomeTraitFoo<H: Hasher>: HashableAny<H> + DynClone + DynEq {}
-    /// impl<H: Hasher, T> SomeTraitFoo<H> for T where T: HashableAny<H> + DynClone + DynEq {}
-    /// 
-    /// create_entry_impl!(SomeTraitFoo<H> where EntryAt<E, A>: Clone + Eq,);
-    /// ```
-    /// 
-    /// [`CreateEntry`]: crate::CreateEntry
-    /// [`InnerEntry`]: crate::InnerEntry
+    #[doc = example_usage!()]
     #[macro_export]
     #[cfg(feature = "unstable_features")]
     macro_rules! create_entry_impl {
